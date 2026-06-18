@@ -67,9 +67,21 @@ if "w_signal_db" not in st.session_state:
 if "undo_history" not in st.session_state:
     st.session_state["undo_history"] = []
 
-# --- AMBIL PARAMETER NO SERI QR CODE ---
-query_params = st.query_params
-url_no_seri = query_params.get("no_seri", "")
+# --- CARA AMAN MEMBACA PARAMETER URL (ANTI BLANK SCREEN) ---
+url_no_seri = ""
+try:
+    if hasattr(st, "query_params"):
+        # Penanganan versi baru Streamlit
+        if "no_seri" in st.query_params:
+            url_no_seri = st.query_params["no_seri"]
+    else:
+        # Penanganan versi lama Streamlit
+        params = st.experimental_get_query_params()
+        if "no_seri" in params:
+            url_no_seri = params["no_seri"][0]
+except Exception as e:
+    pass
+
 if isinstance(url_no_seri, list):
     url_no_seri = url_no_seri[0] if url_no_seri else ""
 url_no_seri = str(url_no_seri).strip()
@@ -152,9 +164,55 @@ def convert_df_to_excel(df_to_download):
 
 
 # =====================================================================
-# CONDITION A: JIKA DI-SCAN VIA KAMERA (DITEMUKAN PARAMETER URL NO_SERI)
+# KONDISI A: JIKA DI-SCAN VIA KAMERA (DITEMUKAN NO_SERI)
 # =====================================================================
 if url_no_seri != "":
-    st.title("📟 W-SIGNAL (E-Label Info Alat Terintegrasi)")
+    st.title("📟 W-SIGNAL (Biodata & E-Label Digital Alat)")
     peta_inv = dapatkan_peta_inventory()
     ns_clean = url_no_seri.strip().lower()
+    
+    if ns_clean in peta_inv:
+        info = peta_inv[ns_clean]
+        nama_alat_aktif = info["Nama Alat"]
+        
+        st.success(f"### 📌 Spesifikasi Utama Alat")
+        col1, col2, col3 = st.columns(3)
+        col1.markdown(f"**Nama Alat:**\n### {info['Nama Alat']}")
+        col2.markdown(f"**Merk / Brand:**\n### {info['Merk']}")
+        col3.markdown(f"**Model / Type:**\n### {info['Type']}")
+        
+        col4, col5, col6 = st.columns(3)
+        col4.markdown(f"**Nomor Seri (S/N):**\n### {info['Nomor Seri']}")
+        col5.markdown(f"**Lokasi Ruangan:**\n### {info['Ruangan']}")
+        col6.markdown(f"**Tahun Pengadaan:**\n### {info['Tahun Pengadaan']}")
+        
+        st.markdown("---")
+        
+        st.markdown("### 📜 Log & Riwayat Aktivitas Alat")
+        tab_perbaikan, tab_pemeliharaan, tab_kalibrasi = st.tabs(["🔧 Riwayat Perbaikan", "🧼 Riwayat Pemeliharaan", "🎯 Riwayat Kalibrasi"])
+        
+        with tab_perbaikan:
+            list_perbaikan = [x for x in data.get("Perbaikan", []) if str(x.get("Nomor Seri", "")).strip().lower() == ns_clean]
+            if list_perbaikan:
+                st.dataframe(pd.DataFrame(list_perbaikan)[["Tanggal Perbaikan", "Kerusakan", "Tindakan", "Keterangan"]], use_container_width=True, hide_index=True)
+            else:
+                st.info("👍 Belum ada riwayat laporan kerusakan (Alat berjalan normal).")
+                
+        with tab_pemeliharaan:
+            list_pemeliharaan = [x for x in data.get("Pemeliharaan", []) if str(x.get("Nomor Seri", "")).strip().lower() == ns_clean]
+            if list_pemeliharaan:
+                st.dataframe(pd.DataFrame(list_pemeliharaan)[["Tanggal Pemeliharaan", "Keterangan"]], use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Belum ada log pemeliharaan preventif terdata.")
+                
+        with tab_kalibrasi:
+            list_kalibrasi = [x for x in data.get("Kalibrasi", []) if str(x.get("Nomor Seri", "")).strip().lower() == ns_clean]
+            if list_kalibrasi:
+                st.dataframe(pd.DataFrame(list_kalibrasi)[["Tanggal Kalibrasi", "Keterangan"]], use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Belum ada log sertifikasi kalibrasi terdata.")
+                
+        st.markdown("---")
+        
+        st.markdown("### 📚 Dokumen Standar Operasional Prosedur (SOP)")
+        list_menu_sop = ["SOP Pemeliharaan Alkes", "SOP Perbaikan Alkes", "SOP Kalibrasi Alkes", "SOP Penghapusan Alkes", "SOP Recall Alkes"]
