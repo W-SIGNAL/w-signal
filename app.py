@@ -4,19 +4,12 @@ import json
 import os
 import copy
 import io
-import qrcode  # Pastikan sudah pip install qrcode pillow
+import qrcode  # Menghasilkan QR code alat
 from datetime import datetime, date
 
 def generate_qr_code(no_seri, nama_alat):
-    # 1. Tentukan URL dasar aplikasi Anda (Ganti setelah Anda deploy ke Streamlit Cloud)
-    # Saat masih di komputer local, bisa gunakan localhost
-    base_url = "http://localhost:8501" 
-    # Jika nanti sudah deploy, ganti menjadi misalnya: "https://w-signal.streamlit.app"
-    
-    # 2. Gabungkan URL dengan parameter Nomor Seri alat
+    base_url = "https://w-signal.streamlit.app" 
     qr_data = f"{base_url}/?no_seri={no_seri}"
-    
-    # 3. Proses pembuatan gambar QR Code
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -25,14 +18,10 @@ def generate_qr_code(no_seri, nama_alat):
     )
     qr.add_data(qr_data)
     qr.make(fit=True)
-    
     img = qr.make_image(fill_color="black", back_color="white")
-    
-    # 4. Konversi gambar ke format Bytes agar bisa didownload di Streamlit
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     byte_im = buf.getvalue()
-    
     return byte_im
 
 # --- 1. KONFIGURASI HALAMAN ---
@@ -42,6 +31,18 @@ st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
 DB_FILE = os.path.join(BASE_DIR, "database_w_signal.json")
 
+# --- STRUKTUR KOLOM DEFAULT SETIAP MENU LOGIS ---
+KOLOM_DEFAULT = {
+    "Inventory Alkes": ["Nama Alat", "Merk", "Type", "Nomor Seri", "Ruangan", "Tahun Pengadaan"],
+    "Perbaikan": ["Tanggal Perbaikan", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Note"],
+    "Pemeliharaan": ["Nama Alat", "Merk", "Type", "Nomor Seri", "Ruangan", "Tanggal Pemeliharaan", "Keterangan", "Note"],
+    "Stok Suku Cadang": ["Nama Suku Cadang", "Spesifikasi", "Jumlah Stok", "Satuan", "In", "Out", "Keterangan"],
+    "Perencanaan RAB (Usulan)": ["Sub Kegiatan", "Nama Kegiatan", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan", "Keterangan"],
+    "Surat Masuk (Nota Dinas)": ["Tanggal Terima Surat", "Tanggal Surat", "Nomor Surat", "Perihal", "Asal Surat", "Keterangan"],
+    "Rekap SR Vendor": ["Tanggal", "Penyedia", "Data Alat", "Kegiatan", "Analisa", "Keterangan"],
+    "Kalibrasi": ["Tanggal Kalibrasi", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Keterangan", "Note"]
+}
+
 # --- 2. FUNGSI DATABASE (LOAD & SAVE) ---
 def load_data():
     if os.path.exists(DB_FILE):
@@ -50,11 +51,11 @@ def load_data():
                 return json.load(f)
         except Exception as e:
             st.error(f"Gagal membaca database lama. Error: {e}")
-    return {
-        "Inventory Alkes": [], "Perbaikan": [], "Pemeliharaan": [], 
-        "Stok Suku Cadang": [], "Perencanaan RAB (Usulan)": [], 
-        "Surat Masuk (Nota Dinas)": [], "Rekap SR Vendor": [], "Kalibrasi": []
-    }
+    
+    initial_db = {k: [] for k in KOLOM_DEFAULT.keys()}
+    # Tambahkan storage untuk penampung file dokumen SOP
+    initial_db["SOP_Files"] = {} 
+    return initial_db
 
 def save_data(data_to_save):
     try:
@@ -66,23 +67,21 @@ def save_data(data_to_save):
 # --- 3. INISIALISASI SESSION STATE ---
 if "w_signal_db" not in st.session_state:
     raw_data = load_data()
-    keys_default = ["Inventory Alkes", "Perbaikan", "Pemeliharaan", "Stok Suku Cadang", 
-                    "Perencanaan RAB (Usulan)", "Surat Masuk (Nota Dinas)", "Rekap SR Vendor", "Kalibrasi"]
-    for k in keys_default:
+    for k in KOLOM_DEFAULT.keys():
         if k not in raw_data:
             raw_data[k] = []
+    if "SOP_Files" not in raw_data:
+        raw_data["SOP_Files"] = {}
     st.session_state["w_signal_db"] = raw_data
 
 if "undo_history" not in st.session_state:
     st.session_state["undo_history"] = []
 
-# FITUR BARU: Menangkap lemparan Nomor Seri dari hasil Scan QR HP melalui URL Parameter
 query_params = st.query_params
 url_no_seri = query_params.get("no_seri", "").strip()
-
 data = st.session_state["w_signal_db"]
 
-# --- 4. FUNGSI MAPPER MASTER DATA INVENTORY ---
+# --- 4. FUNGSI MAPPER DATA INVENTORY ---
 def dapatkan_peta_inventory():
     inv_list = data.get("Inventory Alkes", [])
     peta = {}
@@ -98,6 +97,15 @@ def dapatkan_peta_inventory():
             }
     return peta
 
+def dapatkan_daftar_nama_alat_inventory():
+    inv_list = data.get("Inventory Alkes", [])
+    nama_set = set()
+    for item in inv_list:
+        nama = str(item.get("Nama Alat", "")).strip()
+        if nama:
+            nama_set.add(nama)
+    return sorted(list(nama_set))
+
 def hitung_frekuensi_kerusakan():
     perbaikan_list = data.get("Perbaikan", [])
     counter = {}
@@ -107,7 +115,7 @@ def hitung_frekuensi_kerusakan():
             counter[ns] = counter.get(ns, 0) + 1
     return counter
 
-# --- 5. LOGIKA ANGGARAN RUNNING TOTAL RAB ---
+# --- 5. LOGIKA ANGGARAN RAB ---
 def recalculate_rab(rab_list):
     df = pd.DataFrame(rab_list)
     if df.empty: return rab_list
@@ -139,7 +147,6 @@ def recalculate_rab(rab_list):
     df["Sisa Pagu Anggaran Kegiatan"] = sisa_list
     return df.to_dict(orient="records")
 
-# --- FUNGSI HELPER: MEMBERSIHKAN FORMAT TANGGAL DARI JAM ---
 def bersihkan_format_tanggal(val):
     if pd.isna(val) or val == "":
         return ""
@@ -150,28 +157,18 @@ def bersihkan_format_tanggal(val):
         val_str = val_str.split(" ")[0]
     return val_str
 
-# --- 6. AUTOMATION EDITOR (AUTO-SAVE & RELASI DATA) ---
+# --- 6. AUTOMATION EDITOR (AUTO-SAVE) ---
 def handle_editor_change(menu_key, editor_key):
     if editor_key in st.session_state:
         raw_editor_data = st.session_state[editor_key]
-        
         if raw_editor_data.get("edited_rows") or raw_editor_data.get("added_rows") or raw_editor_data.get("deleted_rows"):
             st.session_state["undo_history"].append(copy.deepcopy(st.session_state["w_signal_db"]))
             df_current = pd.DataFrame(data[menu_key])
             
-            kolom_default = {
-                "Perbaikan": ["Tanggal Perbaikan", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Note"],
-                "Pemeliharaan": ["Nama Alat", "Merk", "Type", "Nomor Seri", "Ruangan", "Tanggal Pemeliharaan", "Keterangan", "Note"],
-                "Kalibrasi": ["Tanggal Kalibrasi", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Keterangan", "Note"],
-                "Rekap SR Vendor": ["Tanggal", "Penyedia", "Data Alat", "Kegiatan", "Analisa", "Keterangan"],
-                "Inventory Alkes": ["Nama Alat", "Merk", "Type", "Nomor Seri", "Ruangan", "Tahun Pengadaan"],
-                "Stok Suku Cadang": ["Nama Suku Cadang", "Spesifikasi", "Jumlah Stok", "Satuan", "In", "Out", "Keterangan"]
-            }
-            
-            if menu_key in kolom_default:
-                for col in kolom_default[menu_key]:
+            if menu_key in KOLOM_DEFAULT:
+                for col in KOLOM_DEFAULT[menu_key]:
                     if col not in df_current.columns:
-                        df_current[col] = 0 if col in ["Jumlah Stok", "In", "Out"] else ""
+                        df_current[col] = 0 if col in ["Jumlah Stok", "In", "Out", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan"] else ""
             
             for row_idx, changes in raw_editor_data.get("edited_rows", {}).items():
                 for col, val in changes.items():
@@ -190,17 +187,14 @@ def handle_editor_change(menu_key, editor_key):
                 for idx, row in df_current.iterrows():
                     ns_key = str(row.get("Nomor Seri", "")).strip().lower()
                     current_note = str(row.get("Note", "")).strip()
-                    
                     if ns_key in peta_inv:
                         df_current.at[idx, "Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
                         df_current.at[idx, "Merk"] = peta_inv[ns_key]["Merk"]
                         df_current.at[idx, "Type"] = peta_inv[ns_key]["Type"]
                         if "Ruangan" in df_current.columns:
                             df_current.at[idx, "Ruangan"] = peta_inv[ns_key]["Ruangan"]
-                        
                         if current_note == "⚠️ BELUM DIINVENTORY":
                             df_current.at[idx, "Note"] = ""
-                            
                     elif ns_key != "":
                         if not current_note or current_note == "None":
                             df_current.at[idx, "Note"] = "⚠️ BELUM DIINVENTORY"
@@ -217,294 +211,309 @@ def handle_editor_change(menu_key, editor_key):
             st.session_state["w_signal_db"][menu_key] = temp_dict
             save_data(st.session_state["w_signal_db"])
 
-# --- 7. EXCEL EXPORTER ---
 def convert_df_to_excel(df_to_download):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df_to_download.to_excel(writer, index=False, sheet_name='Data Rekap')
     return output.getvalue()
 
-# --- 8. SIDEBAR CONTROLS & NAVIGASI ---
+# --- 7. SIDEBAR & URUTAN MENU PERSIS PERMINTAAN ---
 st.sidebar.header("↩️ KONTROL DATA")
 if st.session_state["undo_history"]:
     if st.sidebar.button("↩️ Undo Perubahan Terakhir", use_container_width=True):
         st.session_state["w_signal_db"] = st.session_state["undo_history"].pop()
         save_data(st.session_state["w_signal_db"])
+        st.success("Perubahan terakhir berhasil dibatalkan!")
         st.rerun()
-else:
-    st.sidebar.button("↩️ Undo (Tidak ada riwayat)", disabled=True, use_container_width=True)
-
-st.sidebar.markdown("---")
-st.sidebar.header("🔐 VALIDASI QR INPUT")
-qr_gate_input = st.sidebar.text_input("Scan QR Code Petugas / Admin:", type="password", key="app_qr_gate").strip()
-
-KODE_QR_VALID = "ADMIN-W-SIGNAL"
-akses_terbuka = False
-
-if qr_gate_input == KODE_QR_VALID:
-    st.sidebar.success("🔓 AKSES TERBUKA! Form dapat diisi.")
-    akses_terbuka = True
-elif qr_gate_input != "":
-    st.sidebar.error("❌ QR CODE TIDAK DIKENAL")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 SCAN / CARI ALAT")
-
-# Menentukan nilai default kolom pencarian sidebar (jika mendeteksi QR Scan dari luar/URL)
-default_search_value = url_no_seri if url_no_seri else ""
-barcode_input = st.sidebar.text_input("Arahkan kursor & Scan Barcode / Input No Seri:", value=default_search_value, key="sidebar_barcode").strip().lower()
-
-if barcode_input:
-    peta_inv = dapatkan_peta_inventory()
-    map_rusak = hitung_frekuensi_kerusakan()
-    
-    if barcode_input in peta_inv:
-        alat_info = peta_inv[barcode_input]
-        st.sidebar.success("✅ Data Alat Ditemukan!")
-        
-        with st.sidebar.expander("📊 Detail Informasi Alat", expanded=True):
-            st.markdown(f"**Nama Alat:** {alat_info['Nama Alat']}")
-            st.markdown(f"**Merk:** {alat_info['Merk']}")
-            st.markdown(f"**Type:** {alat_info['Type']}")
-            st.markdown(f"**Ruangan:** {alat_info['Ruangan']}")
-            st.markdown(f"**Tahun Pengadaan:** {alat_info['Tahun Pengadaan']}")
-            
-            total_rusak = map_rusak.get(barcode_input, 0)
-            st.markdown(f"**Total Riwayat Perbaikan:** `{total_rusak}x`")
-    else:
-        st.sidebar.error("❌ Nomor Seri tidak terdaftar di Inventory.")
+search_ns = st.sidebar.text_input("Arahkan kursor & Scan Barcode:", value=url_no_seri)
 
 st.sidebar.markdown("---")
-menu = st.sidebar.radio("Pilih Menu:", [
-    "📋 Inventory Alkes", "🔧 Perbaikan", "📆 Pemeliharaan", "⚙️ Stok Suku Cadang", 
-    "💰 Perencanaan RAB (Usulan)", "📝 Surat Masuk (Nota Dinas)", "🏢 Rekap SR Vendor", "🎯 Kalibrasi", "📊 Lihat Semua Data & Ringkasan"
-])
+st.sidebar.header("Pilih Menu:")
 
-# --- 9. RENDERING ENGINE ---
-def render_page(menu_key, form_fields=None):
-    st.header(f"{menu}")
-    peta_inv = dapatkan_peta_inventory()
-    map_rusak = hitung_frekuensi_kerusakan()
+# Pengelompokan Menu Utama & Menu SOP Baru
+menu_utama = [
+    "Inventory Alkes", "Perbaikan", "Pemeliharaan", "Stok Suku Cadang",
+    "Perencanaan RAB (Usulan)", "Surat Masuk (Nota Dinas)", "Rekap SR Vendor", 
+    "Kalibrasi", "Lihat Semua Data & Ringkasan"
+]
+menu_sop = [
+    "SOP Pemeliharaan Alkes", "SOP Perbaikan Alkes", "SOP Kalibrasi Alkes", 
+    "SOP Penghapusan Alkes", "SOP Recall Alkes"
+]
+
+selected_menu = st.sidebar.radio("Navigasi Menu", menu_utama + menu_sop, label_visibility="collapsed")
+
+# --- 8. LOGIKA HALAMAN UTAMA ---
+if selected_menu == "Lihat Semua Data & Ringkasan":
+    st.header("📋 Ringkasan Analisis Data W-SIGNAL")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Inventory", f"{len(data.get('Inventory Alkes', []))} Unit")
+    col2.metric("Total Surat Masuk", f"{len(data.get('Surat Masuk (Nota Dinas)', []))} Surat")
+    col3.metric("Total Perbaikan", f"{len(data.get('Perbaikan', []))} Laporan")
+    col4.metric("Total Pemeliharaan", f"{len(data.get('Pemeliharaan', []))} Kegiatan")
     
-    if form_fields:
-        with st.form(f"form_{menu_key}", clear_on_submit=False): # Diubah ke False agar form tidak langsung hilang saat tombol download QR ditekan
-            inputs = {}
-            cols = st.columns(len(form_fields))
-            for idx, (field_name, field_type) in enumerate(form_fields.items()):
-                with cols[idx % len(cols)]:
-                    if field_type == "int": inputs[field_name] = st.number_input(field_name, min_value=0, step=1, disabled=not akses_terbuka)
-                    elif field_type == "text_area": inputs[field_name] = st.text_area(field_name, disabled=not akses_terbuka)
-                    elif field_type == "date": inputs[field_name] = str(st.date_input(field_name, disabled=not akses_terbuka))
-                    elif field_type == "readonly": st.text_input(field_name, value="Otomatis Sistem", disabled=True)
-                    else: inputs[field_name] = st.text_input(field_name, disabled=not akses_terbuka)
-                    
-            submit_button = st.form_submit_button("Tambah Data", disabled=not akses_terbuka)
-            
-            if not akses_terbuka:
-                st.warning("⚠️ FORM INPUT TERKUNCI! Silakan scan QR Code Petugas/Admin di sidebar kiri terlebih dahulu untuk menambahkan data baru.")
-            
-            if submit_button and akses_terbuka:
-                st.session_state["undo_history"].append(copy.deepcopy(st.session_state["w_signal_db"]))
-                
-                ns_input = str(inputs.get("Nomor Seri", "")).strip().lower()
-                if menu_key in ["Perbaikan", "Pemeliharaan", "Kalibrasi"] and ns_input in peta_inv:
-                    inputs["Nama Alat"] = peta_inv[ns_input]["Nama Alat"]
-                    inputs["Merk"] = peta_inv[ns_input]["Merk"]
-                    inputs["Type"] = peta_inv[ns_input]["Type"]
-                    inputs["Note"] = ""
-                    if "Ruangan" in form_fields: inputs["Ruangan"] = peta_inv[ns_input]["Ruangan"]
-                elif menu_key in ["Perbaikan", "Pemeliharaan", "Kalibrasi"] and ns_input != "":
-                    inputs["Nama Alat"] = ""
-                    inputs["Merk"] = ""
-                    inputs["Type"] = ""
-                    inputs["Note"] = "⚠️ BELUM DIINVENTORY"
-                    if "Ruangan" in form_fields: inputs["Ruangan"] = ""
-                        
-                data[menu_key].append(inputs)
-                save_data(data)
-                st.success(f"Berhasil menambahkan data baru ke {menu_key}!")
-                
-                # INTEGRASI GEN-QR OTOMATIS: Jika yang ditambah adalah Alat Baru di Inventory, buatkan QR Code-nya
-                if menu_key == "Inventory Alkes" and ns_input:
-                    nama_alkes = inputs.get("Nama Alat", "Alat")
-                    qr_img_bytes = generate_qr_code(inputs.get("Nomor Seri", ""), nama_alkes)
-                    
-                    st.write("---")
-                    st.subheader("🖨️ STIKER QR CODE GENERATOR")
-                    st.image(qr_img_bytes, caption=f"QR Code - {nama_alkes} ({inputs.get('Nomor Seri', '')})", width=180)
-                    st.download_button(
-                        label="📥 Unduh QR Code (Stiker Alkes)",
-                        data=qr_img_bytes,
-                        file_name=f"QR_{inputs.get('Nomor Seri', '')}.png",
-                        mime="image/png"
-                    )
+    st.markdown("### 📂 Tinjauan Seluruh Data Log")
+    tabs = st.tabs(list(KOLOM_DEFAULT.keys()))
+    for i, key in enumerate(KOLOM_DEFAULT.keys()):
+        with tabs[i]:
+            df_tab = pd.DataFrame(data[key])
+            st.dataframe(df_tab, use_container_width=True)
 
-    # --- FITUR UPLOAD FILE EXCEL/CSV MASSAL ---
-    st.markdown("---")
-    with st.expander(f"📥 Mass Upload File Excel / CSV ({menu_key})"):
-        st.info("Pastikan nama kolom pada file Excel/CSV sama dengan nama kolom di tabel sistem.")
-        uploaded_file = st.file_uploader("Pilih file (.xlsx atau .csv)", type=["xlsx", "csv"], key=f"uploader_{menu_key}")
+elif selected_menu in menu_sop:
+    st.header(f"📚 Menu Dokumen: {selected_menu}")
+    st.markdown("### 🔍 Pilih Alat dari Master Inventory & Upload SOP")
+    
+    daftar_alat = dapatkan_daftar_nama_alat_inventory()
+    if not daftar_alat:
+        st.warning("⚠️ Belum ada nama alat di dalam 'Inventory Alkes'. Sila isi data inventory terlebih dahulu.")
+    else:
+        pilih_nama_alat = st.selectbox("Silakan pilih Nama Alat untuk melihat/mengunggah SOP:", daftar_alat)
+        
+        # Key unik untuk identifikasi file SOP di database json
+        sop_storage_key = f"{selected_menu}_{pilih_nama_alat}"
+        
+        st.markdown("---")
+        col_up, col_down = st.columns(2)
+        
+        with col_up:
+            st.markdown("#### 📤 Upload File SOP Baru")
+            file_sop = st.file_uploader(f"Upload dokumen SOP (.pdf, .docx, .xlsx) untuk {pilih_nama_alat}", type=["pdf", "docx", "xlsx", "txt"], key=f"file_{sop_storage_key}")
+            if file_sop is not None:
+                if st.button("💾 Simpan Dokumen SOP", use_container_width=True):
+                    # Konversi file ke string agar bisa disimpan di file json lokal
+                    file_bytes = file_sop.read()
+                    import base64
+                    encoded_file = base64.b64encode(file_bytes).decode('utf-8')
+                    
+                    st.session_state["w_signal_db"]["SOP_Files"][sop_storage_key] = {
+                        "filename": file_sop.name,
+                        "base64_data": encoded_file
+                    }
+                    save_data(st.session_state["w_signal_db"])
+                    st.success(f"Berhasil mengunggah dokumen SOP untuk {pilih_nama_alat}!")
+                    st.rerun()
+                    
+        with col_down:
+            st.markdown("#### 📥 Download Dokumen SOP Aktif")
+            saved_sop_dict = data.get("SOP_Files", {})
+            if sop_storage_key in saved_sop_dict:
+                file_info = saved_sop_dict[sop_storage_key]
+                import base64
+                decoded_bytes = base64.b64decode(file_info["base64_data"])
+                
+                st.info(f"📄 File aktif: **{file_info['filename']}**")
+                st.download_button(
+                    label=f"📥 Download SOP {pilih_nama_alat}",
+                    data=decoded_bytes,
+                    file_name=file_info["filename"],
+                    use_container_width=True
+                )
+            else:
+                st.warning("⚠️ Belum ada file SOP yang diupload untuk alat ini.")
+
+else:
+    # --- MENAMPILKAN MENU LOG DATA BIASA ---
+    st.header(f"📋 Menu: {selected_menu}")
+    
+    # 1. FORM INPUT MANUAL
+    st.markdown("### 📥 Tambah Data Baru")
+    with st.form(key=f"form_{selected_menu.lower().replace(' ', '_')}", clear_on_submit=True):
+        inputs = {}
+        if selected_menu == "Inventory Alkes":
+            col1, col2, col3 = st.columns(3)
+            inputs["Nama Alat"] = col1.text_input("Nama Alat")
+            inputs["Merk"] = col2.text_input("Merk")
+            inputs["Type"] = col3.text_input("Type")
+            col4, col5 = st.columns(2)
+            inputs["Nomor Seri"] = col4.text_input("Nomor Seri")
+            inputs["Ruangan"] = col5.text_input("Ruangan")
+            inputs["Tahun Pengadaan"] = st.text_input("Tahun Pengadaan")
+            
+        elif selected_menu == "Perbaikan":
+            inputs["Tanggal Perbaikan"] = st.date_input("Tanggal Perbaikan").strftime('%Y-%m-%d')
+            inputs["Nomor Seri"] = st.text_input("Nomor Seri")
+            inputs["Kerusakan"] = st.text_area("Kerusakan")
+            inputs["Tindakan"] = st.text_area("Tindakan")
+            inputs["Keterangan"] = st.text_input("Keterangan")
+            inputs["Note"] = ""
+            
+        elif selected_menu == "Pemeliharaan":
+            inputs["Nomor Seri"] = st.text_input("Nomor Seri")
+            inputs["Tanggal Pemeliharaan"] = st.date_input("Tanggal Pemeliharaan").strftime('%Y-%m-%d')
+            inputs["Keterangan"] = st.text_area("Keterangan")
+            inputs["Note"] = ""
+            
+        elif selected_menu == "Stok Suku Cadang":
+            inputs["Nama Suku Cadang"] = st.text_input("Nama Suku Cadang")
+            inputs["Spesifikasi"] = st.text_input("Spesifikasi")
+            col1, col2 = st.columns(2)
+            inputs["Jumlah Stok"] = col1.number_input("Jumlah Stok", min_value=0, step=1)
+            inputs["Satuan"] = col2.text_input("Satuan")
+            inputs["In"] = st.number_input("In", min_value=0, step=1)
+            inputs["Out"] = st.number_input("Out", min_value=0, step=1)
+            inputs["Keterangan"] = st.text_input("Keterangan")
+            
+        elif selected_menu == "Perencanaan RAB (Usulan)":
+            inputs["Sub Kegiatan"] = st.text_input("Sub Kegiatan")
+            inputs["Nama Kegiatan"] = st.text_input("Nama Kegiatan")
+            inputs["Pagu Sub Kegiatan"] = st.number_input("Pagu Sub Kegiatan", min_value=0.0)
+            inputs["Nilai SPH"] = st.number_input("Nilai SPH", min_value=0.0)
+            inputs["Nilai Kontrak"] = st.number_input("Nilai Kontrak", min_value=0.0)
+            inputs["Keterangan"] = st.text_input("Keterangan")
+            
+        elif selected_menu == "Surat Masuk (Nota Dinas)":
+            inputs["Tanggal Terima Surat"] = st.date_input("Tanggal Terima Surat").strftime('%Y-%m-%d')
+            inputs["Tanggal Surat"] = st.date_input("Tanggal Surat").strftime('%Y-%m-%d')
+            inputs["Nomor Surat"] = st.text_input("Nomor Surat")
+            inputs["Perihal"] = st.text_input("Perihal")
+            inputs["Asal Surat"] = st.text_input("Asal Surat")
+            inputs["Keterangan"] = st.text_input("Keterangan")
+            
+        elif selected_menu == "Rekap SR Vendor":
+            inputs["Tanggal"] = st.date_input("Tanggal").strftime('%Y-%m-%d')
+            inputs["Penyedia"] = st.text_input("Penyedia / Vendor")
+            inputs["Data Alat"] = st.text_input("Data Alat")
+            inputs["Kegiatan"] = st.text_input("Kegiatan")
+            inputs["Analisa"] = st.text_area("Analisa")
+            inputs["Keterangan"] = st.text_input("Keterangan")
+            
+        elif selected_menu == "Kalibrasi":
+            inputs["Tanggal Kalibrasi"] = st.date_input("Tanggal Kalibrasi").strftime('%Y-%m-%d')
+            inputs["Nomor Seri"] = st.text_input("Nomor Seri")
+            inputs["Keterangan"] = st.text_input("Keterangan")
+            inputs["Note"] = ""
+
+        submit_button = st.form_submit_button(label="➕ Tambah Data Manual")
+        if submit_button:
+            st.session_state["undo_history"].append(copy.deepcopy(st.session_state["w_signal_db"]))
+            if selected_menu in ["Perbaikan", "Kalibrasi", "Pemeliharaan"]:
+                peta_inv = dapatkan_peta_inventory()
+                ns_key = str(inputs.get("Nomor Seri", "")).strip().lower()
+                if ns_key in peta_inv:
+                    inputs["Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
+                    inputs["Merk"] = peta_inv[ns_key]["Merk"]
+                    inputs["Type"] = peta_inv[ns_key]["Type"]
+                    inputs["Ruangan"] = peta_inv[ns_key]["Ruangan"]
+                    inputs["Note"] = ""
+                elif ns_key != "":
+                    inputs["Nama Alat"] = ""; inputs["Merk"] = ""; inputs["Type"] = ""; inputs["Ruangan"] = ""
+                    inputs["Note"] = "⚠️ BELUM DIINVENTORY"
+
+            st.session_state["w_signal_db"][selected_menu].append(inputs)
+            if selected_menu == "Perencanaan RAB (Usulan)":
+                st.session_state["w_signal_db"][selected_menu] = recalculate_rab(st.session_state["w_signal_db"][selected_menu])
+            save_data(st.session_state["w_signal_db"])
+            st.success(f"Data manual berhasil ditambahkan!")
+            st.rerun()
+
+    # 2. FITUR MASS UPLOAD EXCEL / CSV UNTUK TIAP-TIAP MENU
+    with st.expander(f"📂 Mass Upload File Excel / CSV ({selected_menu})"):
+        st.markdown(f"**Format Judul Kolom Wajib:** `{', '.join(KOLOM_DEFAULT[selected_menu])}`")
+        uploaded_file = st.file_uploader("Pilih file Excel (.xlsx) atau CSV (.csv)", type=["xlsx", "csv"], key=f"file_uploader_{selected_menu.lower().replace(' ', '_')}")
         
         if uploaded_file is not None:
             try:
-                if uploaded_file.name.endswith('.csv'):
-                    df_uploaded = pd.read_csv(uploaded_file)
+                if uploaded_file.name.endswith(".csv"):
+                    df_upload = pd.read_csv(uploaded_file)
                 else:
-                    df_uploaded = pd.read_excel(uploaded_file)
+                    df_upload = pd.read_excel(uploaded_file)
                 
-                df_uploaded = df_uploaded.fillna("")
+                st.dataframe(df_upload.head(3), caption="Pratonton Data (3 Baris Teratas)")
                 
-                kolom_tanggal_sistem = ["Tanggal Perbaikan", "Tanggal Pemeliharaan", "Tanggal Kalibrasi", "Tanggal", "Tanggal Terima Surat", "Tanggal Surat"]
-                for col in kolom_tanggal_sistem:
-                    if col in df_uploaded.columns:
-                        df_uploaded[col] = df_uploaded[col].apply(bersihkan_format_tanggal)
-                
-                st.write("🔍 **Preview Data yang diunggah:**")
-                st.dataframe(df_uploaded.head(5), use_container_width=True)
-                
-                if st.button("🚀 Konfirmasi & Masukkan Data", key=f"btn_confirm_{menu_key}"):
+                if st.button("🚀 Konfirmasi & Masukkan Data Massal", key=f"btn_upload_{selected_menu.lower().replace(' ', '_')}", use_container_width=True):
                     st.session_state["undo_history"].append(copy.deepcopy(st.session_state["w_signal_db"]))
-                    uploaded_records = df_uploaded.to_dict(orient="records")
                     
-                    if menu_key in ["Perbaikan", "Pemeliharaan", "Kalibrasi"]:
-                        for row in uploaded_records:
+                    kolom_req = KOLOM_DEFAULT[selected_menu]
+                    for col in kolom_req:
+                        if col not in df_upload.columns:
+                            df_upload[col] = 0 if col in ["Jumlah Stok", "In", "Out", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan"] else ""
+                    
+                    df_upload = df_upload[kolom_req]
+                    
+                    if selected_menu in ["Perbaikan", "Kalibrasi", "Pemeliharaan"]:
+                        peta_inv = dapatkan_peta_inventory()
+                        for idx, row in df_upload.iterrows():
                             ns_key = str(row.get("Nomor Seri", "")).strip().lower()
                             if ns_key in peta_inv:
-                                row["Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
-                                row["Merk"] = peta_inv[ns_key]["Merk"]
-                                row["Type"] = peta_inv[ns_key]["Type"]
-                                row["Ruangan"] = peta_inv[ns_key]["Ruangan"]
-                                row["Note"] = ""
+                                df_upload.at[idx, "Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
+                                df_upload.at[idx, "Merk"] = peta_inv[ns_key]["Merk"]
+                                df_upload.at[idx, "Type"] = peta_inv[ns_key]["Type"]
+                                if "Ruangan" in df_upload.columns:
+                                    df_upload.at[idx, "Ruangan"] = peta_inv[ns_key]["Ruangan"]
+                                df_upload.at[idx, "Note"] = ""
                             elif ns_key != "":
-                                row["Note"] = "⚠️ BELUM DIINVENTORY"
+                                df_upload.at[idx, "Note"] = "⚠️ BELUM DIINVENTORY"
                     
-                    data[menu_key].extend(uploaded_records)
-                    if menu_key == "Perencanaan RAB (Usulan)":
-                        data[menu_key] = recalculate_rab(data[menu_key])
+                    kolom_tanggal_sistem = ["Tanggal Perbaikan", "Tanggal Pemeliharaan", "Tanggal Kalibrasi", "Tanggal", "Tanggal Terima Surat", "Tanggal Surat"]
+                    for col in kolom_tanggal_sistem:
+                        if col in df_upload.columns:
+                            df_upload[col] = df_upload[col].apply(bersihkan_format_tanggal)
+                    
+                    uploaded_dict = df_upload.fillna("").to_dict(orient="records")
+                    st.session_state["w_signal_db"][selected_menu].extend(uploaded_dict)
+                    
+                    if selected_menu == "Perencanaan RAB (Usulan)":
+                        st.session_state["w_signal_db"][selected_menu] = recalculate_rab(st.session_state["w_signal_db"][selected_menu])
                         
-                    save_data(data)
-                    st.success(f"Berhasil mengimpor {len(uploaded_records)} data baru ke {menu_key}!")
+                    save_data(st.session_state["w_signal_db"])
+                    st.success(f"Berhasil mengimpor {len(df_upload)} data baru ke dalam {selected_menu}!")
                     st.rerun()
             except Exception as e:
-                st.error(f"Gagal membaca file: {e}")
+                st.error(f"Gagal memproses file. Silakan periksa format kolom Anda. Error: {e}")
+
     st.markdown("---")
-
-    st.subheader(f"📝 Live-Editor & Tabel Data {menu_key}")
-    df_current = pd.DataFrame(data[menu_key])
     
-    kolom_wajib_render = {
-        "Perbaikan": ["Tanggal Perbaikan", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Note"],
-        "Pemeliharaan": ["Nama Alat", "Merk", "Type", "Nomor Seri", "Ruangan", "Tanggal Pemeliharaan", "Keterangan", "Note"],
-        "Kalibrasi": ["Tanggal Kalibrasi", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Keterangan", "Note"],
-        "Rekap SR Vendor": ["Tanggal", "Penyedia", "Data Alat", "Kegiatan", "Analisa", "Keterangan"]
-    }
+    # 3. LIVE EDITOR UTAMA & DOWNLOAD FILE EXCEL REKAP
+    st.markdown("### 📝 Live-Editor & Tabel Data")
+    menu_data = data.get(selected_menu, [])
+    df_menu = pd.DataFrame(menu_data)
+    editor_key = f"editor_{selected_menu.lower().replace(' ', '_')}"
     
-    if menu_key in kolom_wajib_render:
-        for col in kolom_wajib_render[menu_key]:
-            if col not in df_current.columns: df_current[col] = ""
-
-    kolom_tanggal_sistem = ["Tanggal Perbaikan", "Tanggal Pemeliharaan", "Tanggal Kalibrasi", "Tanggal", "Tanggal Terima Surat", "Tanggal Surat"]
-    for col in kolom_tanggal_sistem:
-        if col in df_current.columns:
-            df_current[col] = df_current[col].apply(bersihkan_format_tanggal)
-
-    if not df_current.empty:
-        if menu_key == "Kalibrasi":
-            df_current = df_current.reindex(columns=["Tanggal Kalibrasi", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Keterangan", "Note"])
-        elif menu_key == "Perbaikan":
-            df_current["Total Rusak"] = df_current["Nomor Seri"].apply(lambda x: f"{map_rusak.get(str(x).strip().lower(), 0)}x" if str(x).strip() else "0x")
-            df_current = df_current.reindex(columns=["Tanggal Perbaikan", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Total Rusak", "Note"])
-        elif menu_key == "Pemeliharaan":
-            df_current = df_current.reindex(columns=["Nama Alat", "Merk", "Type", "Nomor Seri", "Ruangan", "Tanggal Pemeliharaan", "Keterangan", "Note"])
-        elif menu_key == "Rekap SR Vendor":
-            df_current = df_current.reindex(columns=["Tanggal", "Penyedia", "Data Alat", "Kegiatan", "Analisa", "Keterangan"])
-
+    edited_df = st.data_editor(
+        df_menu,
+        num_rows="dynamic",
+        use_container_width=True,
+        key=editor_key,
+        on_change=handle_editor_change,
+        args=(selected_menu, editor_key)
+    )
+    
+    if not df_menu.empty:
+        excel_bytes = convert_df_to_excel(df_menu)
         st.download_button(
-            label=f"📥 Download Data {menu_key} (.xlsx)",
-            data=convert_df_to_excel(df_current),
-            file_name=f"rekap_{menu_key.lower().replace(' ', '_')}.xlsx",
+            label=f"📥 Download Seluruh Data {selected_menu} (.xlsx)",
+            data=excel_bytes,
+            file_name=f"Data_{selected_menu.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
-    if "Nomor Seri" in df_current.columns:
-        df_current["Nomor Seri"] = df_current["Nomor Seri"].astype(str)
-
-    df_current.index = df_current.index + 1
-    editor_key = f"editor_{menu_key.replace(' ', '_')}"
-    
-    disabled_cols = []
-    if menu_key in ["Perbaikan", "Pemeliharaan", "Kalibrasi"]:
-        disabled_cols = ["Nama Alat", "Merk", "Type", "Ruangan", "Note", "Total Rusak"]
         
-    st.data_editor(
-        df_current, 
-        num_rows="dynamic", 
-        use_container_width=True, 
-        key=editor_key, 
-        on_change=handle_editor_change, 
-        args=(menu_key, editor_key),
-        disabled=disabled_cols,
-        column_config={
-            "Nomor Seri": st.column_config.TextColumn(
-                "Nomor Seri",
-                help="Ubah Nomor Seri di sini",
-                disabled=False
-            )
-        }
-    )
+    if selected_menu == "Inventory Alkes" and not df_menu.empty:
+        st.markdown("---")
+        st.markdown("### 🖨️ Generator QR Code Alat")
+        pilih_alat = st.selectbox("Pilih No Seri Alat untuk dibuatkan QR:", df_menu["Nomor Seri"].unique() if "Nomor Seri" in df_menu.columns else [])
+        if pilih_alat:
+            row_alat = df_menu[df_menu["Nomor Seri"] == pilih_alat].iloc[0]
+            nama_alkes = row_alat.get("Nama Alat", "Alat")
+            qr_img = generate_qr_code(pilih_alat, nama_alkes)
+            st.image(qr_img, caption=f"QR Code - {nama_alkes} ({pilih_alat})", width=200)
+            st.download_button(label="📥 Download Gambar QR Code", data=qr_img, file_name=f"QR_{pilih_alat}.png", mime="image/png")
 
-# --- 10. CONTROLLER ROUTER ---
-if menu == "📋 Inventory Alkes": 
-    render_page("Inventory Alkes", {"Nama Alat": "text", "Merk": "text", "Type": "text", "Nomor Seri": "text", "Ruangan": "text", "Tahun Pengadaan": "text"})
-elif menu == "🔧 Perbaikan": 
-    render_page("Perbaikan", {"Tanggal Perbaikan": "date", "Nomor Seri": "text", "Nama Alat": "readonly", "Merk": "readonly", "Type": "readonly", "Ruangan": "readonly", "Kerusakan": "text_area", "Tindakan": "text_area", "Keterangan": "text"})
-elif menu == "📆 Pemeliharaan": 
-    render_page("Pemeliharaan", {"Nama Alat": "readonly", "Merk": "readonly", "Type": "readonly", "Nomor Seri": "text", "Ruangan": "readonly", "Tanggal Pemeliharaan": "date", "Keterangan": "text"})
-elif menu == "⚙️ Stok Suku Cadang": 
-    render_page("Stok Suku Cadang", {"Nama Suku Cadang": "text", "Spesifikasi": "text", "Jumlah Stok": "int", "Satuan": "text", "In": "int", "Out": "int", "Keterangan": "text"})
-elif menu == "💰 Perencanaan RAB (Usulan)": 
-    render_page("Perencanaan RAB (Usulan)", {"Sub Kegiatan": "text", "Nama Kegiatan": "text", "Pagu Sub Kegiatan": "int", "Nilai SPH": "int", "Nilai Kontrak": "int", "Keterangan": "text"})
-elif menu == "📝 Surat Masuk (Nota Dinas)": 
-    render_page("Surat Masuk (Nota Dinas)", {"Tanggal Terima Surat": "date", "Dari": "text", "Tanggal Surat": "date", "Hal": "text", "Keterangan": "text_area"})
-elif menu == "🏢 Rekap SR Vendor": 
-    render_page("Rekap SR Vendor", {"Tanggal": "date", "Penyedia": "text", "Data Alat": "text", "Kegiatan": "text", "Analisa": "text_area", "Keterangan": "text"})
-elif menu == "🎯 Kalibrasi": 
-    render_page("Kalibrasi", {"Tanggal Kalibrasi": "date", "Nomor Seri": "text", "Nama Alat": "readonly", "Merk": "readonly", "Type": "readonly", "Ruangan": "readonly", "Keterangan": "text"})
-elif menu == "📊 Lihat Semua Data & Ringkasan":
-    st.header("📊 W-SIGNAL Dashboard Analisis")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Inventory", f"{len(data.get('Inventory Alkes', []))} Unit")
-    c2.metric("Total Surat Masuk", f"{len(data.get('Surat Masuk (Nota Dinas)', []))} Surat")
-    c3.metric("Total Perbaikan", f"{len(data.get('Perbaikan', []))} Laporan")
-    c4.metric("Total Pemeliharaan", f"{len(data.get('Pemeliharaan', []))} Kegiatan")
-    
-    st.write("---")
-    st.subheader("🗂️ Tinjauan Seluruh Data Log")
-    tabs = st.tabs(["Inventory", "Perbaikan", "Pemeliharaan", "Stok Suku Cadang", "Perencanaan RAB", "Surat Masuk", "SR Vendor", "Kalibrasi"])
-    keys = ["Inventory Alkes", "Perbaikan", "Pemeliharaan", "Stok Suku Cadang", "Perencanaan RAB (Usulan)", "Surat Masuk (Nota Dinas)", "Rekap SR Vendor", "Kalibrasi"]
-    filenames = ["inventory", "perbaikan", "pemeliharaan", "stok_sukucadang", "rab_usulan", "surat_masuk", "sr_vendor", "kalibrasi"]
-    
-    peta_inv = dapatkan_peta_inventory()
-    map_rusak = hitung_frekuensi_kerusakan()
-    for t, k, f in zip(tabs, keys, filenames):
-        with t:
-            df = pd.DataFrame(data.get(k, []))
-            
-            kolom_tanggal_sistem = ["Tanggal Perbaikan", "Tanggal Pemeliharaan", "Tanggal Kalibrasi", "Tanggal", "Tanggal Terima Surat", "Tanggal Surat"]
-            for col in kolom_tanggal_sistem:
-                if col in df.columns:
-                    df[col] = df[col].apply(bersihkan_format_tanggal)
-                    
-            if not df.empty:
-                if k == "Kalibrasi":
-                    df = df.reindex(columns=["Tanggal Kalibrasi", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Keterangan", "Note"])
-                elif k == "Perbaikan":
-                    df["Total Rusak"] = df["Nomor Seri"].apply(lambda x: f"{map_rusak.get(str(x).strip().lower(), 0)}x" if str(x).strip() else "0x")
-                    df = df.reindex(columns=["Tanggal Perbaikan", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Total Rusak", "Note"])
-                elif k == "Pemeliharaan":
-                    df = df.reindex(columns=["Nama Alat", "Merk", "Type", "Nomor Seri", "Ruangan", "Tanggal Pemeliharaan", "Keterangan", "Note"])
-                elif k == "Rekap SR Vendor":
-                    df = df.reindex(columns=["Tanggal", "Penyedia", "Data Alat", "Kegiatan", "Analisa", "Keterangan"])
-                st.download_button(f"📥 Download Excel ({k})", convert_df_to_excel(df), f"rekap_{f}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            df.index = df.index + 1
-            st.dataframe(df, use_container_width=True)
+# --- FITUR PENCARIAN BARCODE SIDEBAR ---
+if search_ns:
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🔍 Hasil Pencarian Alat:")
+    peta = dapatkan_peta_inventory()
+    ns_clean = search_ns.strip().lower()
+    if ns_clean in peta:
+        info = peta[ns_clean]
+        st.sidebar.success(f"**Alat Ditemukan!**\n\n* **Nama:** {info['Nama Alat']}\n* **Merk:** {info['Merk']}\n* **Type:** {info['Type']}\n* **Ruangan:** {info['Ruangan']}")
+        freq = hitung_frekuensi_kerusakan().get(ns_clean, 0)
+        if freq > 3:
+            st.sidebar.error(f"⚠️ **Peringatan Kerusakan:** Alat ini sudah rusak sebanyak **{freq} kali**!")
+        else:
+            st.sidebar.info(f"Riwayat Perbaikan: {freq} kali.")
+    else:
+        st.sidebar.warning("Nomor Seri belum terdaftar di Inventory Alkes.")
