@@ -10,12 +10,7 @@ from datetime import datetime, date
 def generate_qr_code(no_seri, nama_alat):
     base_url = "https://w-signal.streamlit.app" 
     qr_data = f"{base_url}/?no_seri={no_seri}"
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
     qr.add_data(qr_data)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
@@ -42,20 +37,16 @@ KOLOM_DEFAULT = {
 def load_data():
     if os.path.exists(DB_FILE):
         try:
-            with open(DB_FILE, "r") as f: 
-                return json.load(f)
-        except Exception as e:
-            pass
+            with open(DB_FILE, "r") as f: return json.load(f)
+        except: pass
     initial_db = {k: [] for k in KOLOM_DEFAULT.keys()}
     initial_db["SOP_Files"] = {} 
     return initial_db
 
 def save_data(data_to_save):
     try:
-        with open(DB_FILE, "w") as f: 
-            json.dump(data_to_save, f, indent=4)
-    except Exception as e:
-        st.error(f"Gagal mengamankan data: {e}")
+        with open(DB_FILE, "w") as f: json.dump(data_to_save, f, indent=4)
+    except Exception as e: st.error(f"Gagal mengamankan data: {e}")
 
 if "w_signal_db" not in st.session_state:
     raw_data = load_data()
@@ -74,15 +65,7 @@ def dapatkan_peta_inventory():
     peta = {}
     for item in inv_list:
         ns = str(item.get("Nomor Seri", "")).strip().lower()
-        if ns:
-            peta[ns] = {
-                "Nama Alat": item.get("Nama Alat", ""),
-                "Merk": item.get("Merk", ""),
-                "Type": item.get("Type", ""),
-                "Nomor Seri": item.get("Nomor Seri", ""),
-                "Ruangan": item.get("Ruangan", ""),
-                "Tahun Pengadaan": item.get("Tahun Pengadaan", "")
-            }
+        if ns: peta[ns] = {"Nama Alat": item.get("Nama Alat", ""), "Merk": item.get("Merk", ""), "Type": item.get("Type", ""), "Nomor Seri": item.get("Nomor Seri", ""), "Ruangan": item.get("Ruangan", ""), "Tahun Pengadaan": item.get("Tahun Pengadaan", "")}
     return peta
 
 def dapatkan_daftar_nama_alat_inventory():
@@ -108,9 +91,21 @@ def handle_editor_change(menu_key, editor_key):
             df_current = pd.DataFrame(data[menu_key])
             if menu_key in KOLOM_DEFAULT:
                 for col in KOLOM_DEFAULT[menu_key]:
-                    if col not in df_current.columns:
-                        df_current[col] = 0 if col in ["Jumlah Stok", "In", "Out", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan"] else ""
+                    if col not in df_current.columns: df_current[col] = 0 if col in ["Jumlah Stok", "In", "Out", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan"] else ""
             for row_idx, changes in raw_editor_data.get("edited_rows", {}).items():
                 for col, val in changes.items():
                     if col in df_current.columns: df_current.iat[row_idx, df_current.columns.get_loc(col)] = val
             for new_row in raw_editor_data.get("added_rows", []):
+                df_current = pd.concat([df_current, pd.DataFrame([new_row])], ignore_index=True)
+            deleted_indices = raw_editor_data.get("deleted_rows", [])
+            if deleted_indices: df_current = df_current.drop(deleted_indices).reset_index(drop=True)
+            if menu_key in ["Perbaikan", "Kalibrasi", "Pemeliharaan"]:
+                peta_inv = dapatkan_peta_inventory()
+                for idx, row in df_current.iterrows():
+                    ns_key = str(row.get("Nomor Seri", "")).strip().lower()
+                    current_note = str(row.get("Note", "")).strip()
+                    if ns_key in peta_inv:
+                        df_current.at[idx, "Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
+                        df_current.at[idx, "Merk"] = peta_inv[ns_key]["Merk"]
+                        df_current.at[idx, "Type"] = peta_inv[ns_key]["Type"]
+                        if "Ruangan" in df_current.columns:
