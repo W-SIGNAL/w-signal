@@ -8,6 +8,7 @@ import qrcode
 from datetime import datetime, date
 
 def generate_qr_code(no_seri, nama_alat):
+    # Menggunakan URL live milik Anda
     base_url = "https://w-signal.streamlit.app" 
     qr_data = f"{base_url}/?no_seri={no_seri}"
     qr = qrcode.QRCode(
@@ -68,8 +69,13 @@ if "w_signal_db" not in st.session_state:
 if "undo_history" not in st.session_state:
     st.session_state["undo_history"] = []
 
+# --- INTEGRASI STRUKTUR PARAMETER SCANNER ---
 query_params = st.query_params
-url_no_seri = query_params.get("no_seri", "").strip()
+url_no_seri = query_params.get("no_seri", "")
+if isinstance(url_no_seri, list):
+    url_no_seri = url_no_seri[0] if url_no_seri else ""
+url_no_seri = str(url_no_seri).strip()
+
 data = st.session_state["w_signal_db"]
 
 def dapatkan_peta_inventory():
@@ -191,7 +197,8 @@ if st.session_state["undo_history"]:
 
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 SCAN / CARI ALAT")
-search_ns = st.sidebar.text_input("Arahkan kursor & Scan Barcode:", value=url_no_seri)
+# Input teks mendeteksi otomatis jika ada parameter pindindaian kamera
+search_ns = st.sidebar.text_input("Arahkan kursor & Scan Barcode / Input No Seri:", value=url_no_seri)
 
 st.sidebar.markdown("---")
 st.sidebar.header("Pilih Menu:")
@@ -412,7 +419,7 @@ if search_ns:
     ns_clean = search_ns.strip().lower()
     if ns_clean in peta:
         info = peta[ns_clean]
-        st.sidebar.success(f"**Alat Ditemukan!**\n\n* **Nama:** {info['Nama Alat']}\n* **Merk:** {info['Merk']}\n* **Type:** {info['Type']}\n* **Ruangan:** {info['Ruangan']}")
+        st.sidebar.success(f"**Alat Ditemukan!**\n\n* **Nama:** {info['Nama Alat']}\n* **Merk:** {info['Merk']}\n* **Type:** {info['Type']}\n* **Ruangan:** {info['Ruangan']}\n* **Tahun:** {info['Tahun Pengadaan']}")
         freq = hitung_frekuensi_kerusakan().get(ns_clean, 0)
         if freq > 3: st.sidebar.error(f"⚠️ **Peringatan:** Alat ini sudah rusak sebanyak **{freq} kali**!")
         else: st.sidebar.info(f"Riwayat Perbaikan: {freq} kali.")
