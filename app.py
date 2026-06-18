@@ -172,4 +172,4 @@ if scan_input != "":
             else: st.info("Belum ada riwayat laporan kerusakan (Alat normal).")
                 
         with t_pemeliharaan:
-            list_m = [x for x in data.get("Pemeliharaan", []) if str(x
+            list_m = [x for x in data.get("Pemeliharaan", []) if str(x)
