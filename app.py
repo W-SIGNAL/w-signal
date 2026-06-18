@@ -172,4 +172,218 @@ if scan_input != "":
             else: st.info("Belum ada riwayat laporan kerusakan (Alat normal).")
                 
         with t_pemeliharaan:
-            list_m = [x for x in data.get("Pemeliharaan", []) if str(x)
+            list_m = [x for x in data.get("Pemeliharaan", []) if str(x.get("Nomor Seri", "")).strip().lower() == ns_clean]
+            if list_m: st.dataframe(pd.DataFrame(list_m)[["Tanggal Pemeliharaan", "Keterangan"]], use_container_width=True, hide_index=True)
+            else: st.info("Belum ada log pemeliharaan preventif terdata.")
+                
+        with t_kalibrasi:
+            list_k = [x for x in data.get("Kalibrasi", []) if str(x.get("Nomor Seri", "")).strip().lower() == ns_clean]
+            if list_k: st.dataframe(pd.DataFrame(list_k)[["Tanggal Kalibrasi", "Keterangan"]], use_container_width=True, hide_index=True)
+            else: st.info("Belum ada log sertifikasi kalibrasi terdata.")
+                
+        st.markdown("---")
+        st.markdown("### 📚 Dokumen Standar Operasional Prosedur (SOP)")
+        list_menu_sop = ["SOP Pemeliharaan Alkes", "SOP Perbaikan Alkes", "SOP Kalibrasi Alkes", "SOP Penghapusan Alkes", "SOP Recall Alkes"]
+        sop_ditemukan = False
+        saved_sop_dict = data.get("SOP_Files", {})
+        
+        for sop_name in list_menu_sop:
+            storage_key = f"{sop_name}_{nama_alat_aktif}"
+            if storage_key in saved_sop_dict:
+                sop_ditemukan = True
+                file_info = saved_sop_dict[storage_key]
+                import base64
+                decoded_bytes = base64.b64decode(file_info["base64_data"])
+                st.info(f"File: {file_info['filename']}")
+                st.download_button(label=f"Download {sop_name}", data=decoded_bytes, file_name=file_info["filename"], key=f"btn_{storage_key}")
+        
+        if not sop_ditemukan: st.warning(f"Belum ada berkas SOP yang diunggah untuk alat '{nama_alat_aktif}'.")
+    else:
+        st.error(f"Nomor Seri '{scan_input}' Tidak Terdaftar")
+        st.info("Kosongkan kolom pencarian di sebelah kiri untuk kembali.")
+
+# =====================================================================
+# BLOK LOGIKA 2: TAMPILAN NORMAL MANAGEMENT ADMIN
+# =====================================================================
+else:
+    st.title("W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
+    if selected_menu == "Lihat Semua Data & Ringkasan":
+        st.header("Ringkasan Analisis Data W-SIGNAL")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Inventory", f"{len(data.get('Inventory Alkes', []))} Unit")
+        col2.metric("Total Surat Masuk", f"{len(data.get('Surat Masuk (Nota Dinas)', []))} Surat")
+        col3.metric("Total Perbaikan", f"{len(data.get('Perbaikan', []))} Laporan")
+        col4.metric("Total Pemeliharaan", f"{len(data.get('Pemeliharaan', []))} Kegiatan")
+        st.markdown("### Tinjauan Seluruh Data Log")
+        tabs = st.tabs(list(KOLOM_DEFAULT.keys()))
+        for i, key in enumerate(KOLOM_DEFAULT.keys()):
+            with tabs[i]: st.dataframe(pd.DataFrame(data[key]), use_container_width=True)
+
+    elif selected_menu in menu_sop:
+        st.header(f"Menu Dokumen: {selected_menu}")
+        st.markdown("### Pilih Alat dari Master Inventory & Upload SOP")
+        daftar_alat = dapatkan_daftar_nama_alat_inventory()
+        if not daftar_alat: st.warning("Belum ada nama alat di dalam 'Inventory Alkes'.")
+        else:
+            pilih_nama_alat = st.selectbox("Pilih Nama Alat:", daftar_alat)
+            sop_storage_key = f"{selected_menu}_{pilih_nama_alat}"
+            st.markdown("---")
+            col_up, col_down = st.columns(2)
+            with col_up:
+                st.markdown("#### Upload File SOP Baru")
+                file_sop = st.file_uploader(f"Upload dokumen SOP", type=["pdf", "docx", "xlsx", "txt"], key=f"file_{sop_storage_key}")
+                if file_sop is not None:
+                    if st.button("Simpan Dokumen SOP", use_container_width=True):
+                        import base64
+                        encoded_file = base64.b64encode(file_sop.read()).decode('utf-8')
+                        st.session_state["w_signal_db"]["SOP_Files"][sop_storage_key] = {"filename": file_sop.name, "base64_data": encoded_file}
+                        save_data(st.session_state["w_signal_db"])
+                        st.success(f"Berhasil mengunggah!")
+                        st.rerun()
+            with col_down:
+                st.markdown("#### Download Dokumen SOP Aktif")
+                saved_sop_dict = data.get("SOP_Files", {})
+                if sop_storage_key in saved_sop_dict:
+                    file_info = saved_sop_dict[sop_storage_key]
+                    import base64
+                    decoded_bytes = base64.b64decode(file_info["base64_data"])
+                    st.info(f"File aktif: {file_info['filename']}")
+                    st.download_button(label=f"Download SOP {pilih_nama_alat}", data=decoded_bytes, file_name=file_info["filename"], use_container_width=True)
+                else: st.warning("Belum ada file SOP yang diupload untuk alat ini.")
+
+    else:
+        st.header(f"Menu: {selected_menu}")
+        st.markdown("### Tambah Data Baru")
+        with st.form(key=f"form_{selected_menu.lower().replace(' ', '_')}", clear_on_submit=True):
+            inputs = {}
+            if selected_menu == "Inventory Alkes":
+                col1, col2, col3 = st.columns(3)
+                inputs["Nama Alat"] = col1.text_input("Nama Alat")
+                inputs["Merk"] = col2.text_input("Merk")
+                inputs["Type"] = col3.text_input("Type")
+                col4, col5 = st.columns(2)
+                inputs["Nomor Seri"] = col4.text_input("Nomor Seri")
+                inputs["Ruangan"] = col5.text_input("Ruangan")
+                inputs["Tahun Pengadaan"] = st.text_input("Tahun Pengadaan")
+            elif selected_menu == "Perbaikan":
+                inputs["Tanggal Perbaikan"] = st.date_input("Tanggal Perbaikan").strftime('%Y-%m-%d')
+                inputs["Nomor Seri"] = st.text_input("Nomor Seri")
+                inputs["Kerusakan"] = st.text_area("Kerusakan")
+                inputs["Tindakan"] = st.text_area("Tindakan")
+                inputs["Keterangan"] = st.text_input("Keterangan")
+                inputs["Note"] = ""
+            elif selected_menu == "Pemeliharaan":
+                inputs["Nomor Seri"] = st.text_input("Nomor Seri")
+                inputs["Tanggal Pemeliharaan"] = st.date_input("Tanggal Pemeliharaan").strftime('%Y-%m-%d')
+                inputs["Keterangan"] = st.text_area("Keterangan")
+                inputs["Note"] = ""
+            elif selected_menu == "Stok Suku Cadang":
+                inputs["Nama Suku Cadang"] = st.text_input("Nama Suku Cadang")
+                inputs["Spesifikasi"] = st.text_input("Spesifikasi")
+                col1, col2 = st.columns(2)
+                inputs["Jumlah Stok"] = col1.number_input("Jumlah Stok", min_value=0, step=1)
+                inputs["Satuan"] = col2.text_input("Satuan")
+                inputs["In"] = st.number_input("In", min_value=0, step=1)
+                inputs["Out"] = st.number_input("Out", min_value=0, step=1)
+                inputs["Keterangan"] = st.text_input("Keterangan")
+            elif selected_menu == "Perencanaan RAB (Usulan)":
+                inputs["Sub Kegiatan"] = st.text_input("Sub Kegiatan")
+                inputs["Nama Kegiatan"] = st.text_input("Nama Kegiatan")
+                inputs["Pagu Sub Kegiatan"] = st.number_input("Pagu Sub Kegiatan", min_value=0.0)
+                inputs["Nilai SPH"] = st.number_input("Nilai SPH", min_value=0.0)
+                inputs["Nilai Kontrak"] = st.number_input("Nilai Kontrak", min_value=0.0)
+                inputs["Keterangan"] = st.text_input("Keterangan")
+            elif selected_menu == "Surat Masuk (Nota Dinas)":
+                inputs["Tanggal Terima Surat"] = st.date_input("Tanggal Terima Surat").strftime('%Y-%m-%d')
+                inputs["Tanggal Surat"] = st.date_input("Tanggal Surat").strftime('%Y-%m-%d')
+                inputs["Nomor Surat"] = st.text_input("Nomor Surat")
+                inputs["Perihal"] = st.text_input("Perihal")
+                inputs["Asal Surat"] = st.text_input("Asal Surat")
+                inputs["Keterangan"] = st.text_input("Keterangan")
+            elif selected_menu == "Rekap SR Vendor":
+                inputs["Tanggal"] = st.date_input("Tanggal").strftime('%Y-%m-%d')
+                inputs["Penyedia"] = st.text_input("Penyedia / Vendor")
+                inputs["Data Alat"] = st.text_input("Data Alat")
+                inputs["Kegiatan"] = st.text_input("Kegiatan")
+                inputs["Analisa"] = st.text_area("Analisa")
+                inputs["Keterangan"] = st.text_input("Keterangan")
+            elif selected_menu == "Kalibrasi":
+                inputs["Tanggal Kalibrasi"] = st.date_input("Tanggal Kalibrasi").strftime('%Y-%m-%d')
+                inputs["Nomor Seri"] = st.text_input("Nomor Seri")
+                inputs["Keterangan"] = st.text_input("Keterangan")
+                inputs["Note"] = ""
+
+            if st.form_submit_button(label="Tambah Data Manual"):
+                st.session_state["undo_history"].append(copy.deepcopy(st.session_state["w_signal_db"]))
+                if selected_menu in ["Perbaikan", "Kalibrasi", "Pemeliharaan"]:
+                    peta_inv = dapatkan_peta_inventory()
+                    ns_key = str(inputs.get("Nomor Seri", "")).strip().lower()
+                    if ns_key in peta_inv:
+                        inputs["Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
+                        inputs["Merk"] = peta_inv[ns_key]["Merk"]
+                        inputs["Type"] = peta_inv[ns_key]["Type"]
+                        inputs["Ruangan"] = peta_inv[ns_key]["Ruangan"]
+                        inputs["Note"] = ""
+                    elif ns_key != "":
+                        inputs["Nama Alat"] = ""; inputs["Merk"] = ""; inputs["Type"] = ""; inputs["Ruangan"] = ""
+                        inputs["Note"] = "⚠️ BELUM DIINVENTORY"
+                st.session_state["w_signal_db"][selected_menu].append(inputs)
+                save_data(st.session_state["w_signal_db"])
+                st.success(f"Data manual berhasil ditambahkan!")
+                st.rerun()
+
+        with st.expander(f"Mass Upload File Excel / CSV ({selected_menu})"):
+            st.markdown(f"**Format Judul Kolom Wajib:** `{', '.join(KOLOM_DEFAULT[selected_menu])}`")
+            uploaded_file = st.file_uploader("Pilih file Excel (.xlsx) atau CSV (.csv)", type=["xlsx", "csv"], key=f"file_uploader_{selected_menu.lower().replace(' ', '_')}")
+            if uploaded_file is not None:
+                try:
+                    df_upload = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
+                    st.dataframe(df_upload.head(3), caption="Pratonton Data")
+                    if st.button("Konfirmasi & Masukkan Data", key=f"btn_upload_{selected_menu.lower().replace(' ', '_')}", use_container_width=True):
+                        st.session_state["undo_history"].append(copy.deepcopy(st.session_state["w_signal_db"]))
+                        kolom_req = KOLOM_DEFAULT[selected_menu]
+                        for col in kolom_req:
+                            if col not in df_upload.columns: df_upload[col] = 0 if col in ["Jumlah Stok", "In", "Out", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan"] else ""
+                        df_upload = df_upload[kolom_req]
+                        if selected_menu in ["Perbaikan", "Kalibrasi", "Pemeliharaan"]:
+                            peta_inv = dapatkan_peta_inventory()
+                            for idx, row in df_upload.iterrows():
+                                ns_key = str(row.get("Nomor Seri", "")).strip().lower()
+                                if ns_key in peta_inv:
+                                    df_upload.at[idx, "Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
+                                    df_upload.at[idx, "Merk"] = peta_inv[ns_key]["Merk"]
+                                    df_upload.at[idx, "Type"] = peta_inv[ns_key]["Type"]
+                                    if "Ruangan" in df_upload.columns: df_upload.at[idx, "Ruangan"] = peta_inv[ns_key]["Ruangan"]
+                                    df_upload.at[idx, "Note"] = ""
+                                elif ns_key != "": df_upload.at[idx, "Note"] = "⚠️ BELUM DIINVENTORY"
+                        kolom_tanggal_sistem = ["Tanggal Perbaikan", "Tanggal Pemeliharaan", "Tanggal Kalibrasi", "Tanggal", "Tanggal Terima Surat", "Tanggal Surat"]
+                        for col in kolom_tanggal_sistem:
+                            if col in df_upload.columns: df_upload[col] = df_upload[col].apply(bersihkan_format_tanggal)
+                        st.session_state["w_signal_db"][selected_menu].extend(df_upload.fillna("").to_dict(orient="records"))
+                        save_data(st.session_state["w_signal_db"])
+                        st.success(f"Berhasil mengimpor {len(df_upload)} data!")
+                        st.rerun()
+                except Exception as e: st.error(f"Gagal memproses file. Error: {e}")
+
+        st.markdown("---")
+        st.markdown("### 📝 Live-Editor & Tabel Data")
+        df_menu = pd.DataFrame(data.get(selected_menu, []))
+        editor_key = f"editor_{selected_menu.lower().replace(' ', '_')}"
+        edited_df = st.data_editor(df_menu, num_rows="dynamic", use_container_width=True, key=editor_key, on_change=handle_editor_change, args=(selected_menu, editor_key))
+        
+        if not df_menu.empty:
+            try:
+                excel_bytes = convert_df_to_excel(df_menu)
+                st.download_button(label=f"Download Seluruh Data {selected_menu} (.xlsx)", data=excel_bytes, file_name=f"Data_{selected_menu.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            except: pass
+            
+        if selected_menu == "Inventory Alkes" and not df_menu.empty:
+            st.markdown("---")
+            st.markdown("### 🖨️ Generator QR Code Alat")
+            pilih_alat = st.selectbox("Pilih No Seri Alat untuk dibuatkan QR:", df_menu["Nomor Seri"].unique() if "Nomor Seri" in df_menu.columns else [])
+            if pilih_alat:
+                row_alat = df_menu[df_menu["Nomor Seri"] == pilih_alat].iloc[0]
+                nama_alkes = row_alat.get("Nama Alat", "Alat")
+                qr_img = generate_qr_code(pilih_alat, nama_alkes)
+                st.image(qr_img, caption=f"QR Code - {nama_alkes} ({pilih_alat})", width=200)
+                st.download_button(label="Download Gambar QR Code", data=qr_img, file_name=f"QR_{pilih_alat}.png", mime="image/png")
