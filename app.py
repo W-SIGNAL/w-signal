@@ -146,7 +146,6 @@ def convert_df_to_excel(df_to_download):
 # --- SIDEBAR UTAMA ---
 st.sidebar.title("⚙️ PANEL KONTROL")
 
-# PENGGANTI SYSTEM AUTOMATIC PARAMETER URL MENGGUNAKAN BOX INPUT LANGSUNG (ANTI CRASH)
 st.sidebar.markdown("### 📷 SCAN BARCODE / CARI NO SERI")
 scan_input = st.sidebar.text_input("Arahkan kursor & Scan Barcode / Input No Seri:", key="scan_box_utama").strip()
 
@@ -175,4 +174,19 @@ selected_menu = st.sidebar.radio("Navigasi Menu", menu_utama + menu_sop, label_v
 # BLOK LOGIKA 1: JIKA PETUGAS MELAKUKAN SCAN BARCODE / COPAST NO SERI
 # =====================================================================
 if scan_input != "":
-    st.title("📟 W-SIGNAL (E
+    st.title("📟 W-SIGNAL (E-Label Info Alat Digital)")
+    peta_inv = dapatkan_peta_inventory()
+    ns_clean = scan_input.lower()
+    
+    if ns_clean in peta_inv:
+        info = peta_inv[ns_clean]
+        nama_alat_aktif = info["Nama Alat"]
+        
+        st.success("### 📌 Spesifikasi Utama Alat")
+        col1, col2, col3 = st.columns(3)
+        col1.markdown(f"**Nama Alat:**\n### {info['Nama Alat']}")
+        col2.markdown(f"**Merk / Brand:**\n### {info['Merk']}")
+        col3.markdown(f"**Model / Type:**\n### {info['Type']}")
+        
+        col4, col5, col6 = st.columns(3)
+        col4.markdown(f"**Nomor Seri (S/
