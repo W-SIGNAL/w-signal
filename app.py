@@ -108,4 +108,68 @@ def handle_editor_change(menu_key, editor_key):
                         df_current.at[idx, "Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
                         df_current.at[idx, "Merk"] = peta_inv[ns_key]["Merk"]
                         df_current.at[idx, "Type"] = peta_inv[ns_key]["Type"]
-                        if "Ruangan" in df_current.columns:
+                        if "Ruangan" in df_current.columns: df_current.at[idx, "Ruangan"] = peta_inv[ns_key]["Ruangan"]
+                        if current_note == "⚠️ BELUM DIINVENTORY": df_current.at[idx, "Note"] = ""
+                    elif ns_key != "":
+                        if not current_note or current_note == "None": df_current.at[idx, "Note"] = "⚠️ BELUM DIINVENTORY"
+            kolom_tanggal_sistem = ["Tanggal Perbaikan", "Tanggal Pemeliharaan", "Tanggal Kalibrasi", "Tanggal", "Tanggal Terima Surat", "Tanggal Surat"]
+            for col in kolom_tanggal_sistem:
+                if col in df_current.columns: df_current[col] = df_current[col].apply(bersihkan_format_tanggal)
+            st.session_state["w_signal_db"][menu_key] = df_current.fillna("").to_dict(orient="records")
+            save_data(st.session_state["w_signal_db"])
+
+def convert_df_to_excel(df_to_download):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer: df_to_download.to_excel(writer, index=False, sheet_name='Data Rekap')
+    return output.getvalue()
+
+# --- SIDEBAR UTAMA ---
+st.sidebar.title("⚙️ PANEL KONTROL")
+st.sidebar.markdown("### 📷 SCAN BARCODE / CARI NO SERI")
+scan_input = st.sidebar.text_input("Scan Barcode / Input No Seri:", key="scan_box_utama").strip()
+
+if st.session_state["undo_history"]:
+    if st.sidebar.button("↩️ Undo Perubahan", use_container_width=True):
+        st.session_state["w_signal_db"] = st.session_state["undo_history"].pop()
+        save_data(st.session_state["w_signal_db"])
+        st.success("Perubahan dibatalkan!")
+        st.rerun()
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📋 PILIH MENU ADMIN")
+menu_utama = ["Inventory Alkes", "Perbaikan", "Pemeliharaan", "Stok Suku Cadang", "Perencanaan RAB (Usulan)", "Surat Masuk (Nota Dinas)", "Rekap SR Vendor", "Kalibrasi", "Lihat Semua Data & Ringkasan"]
+menu_sop = ["SOP Pemeliharaan Alkes", "SOP Perbaikan Alkes", "SOP Kalibrasi Alkes", "SOP Penghapusan Alkes", "SOP Recall Alkes"]
+selected_menu = st.sidebar.radio("Navigasi Menu", menu_utama + menu_sop, label_visibility="collapsed")
+
+# =====================================================================
+# BLOK LOGIKA 1: SCAN BARCODE
+# =====================================================================
+if scan_input != "":
+    st.title("📟 W-SIGNAL (E-Label Info)")
+    peta_inv = dapatkan_peta_inventory()
+    ns_clean = scan_input.lower()
+    
+    if ns_clean in peta_inv:
+        info = peta_inv[ns_clean]
+        nama_alat_aktif = info["Nama Alat"]
+        st.success("### 📌 Spesifikasi Utama Alat")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Nama Alat", info["Nama Alat"])
+        col2.metric("Merk / Brand", info["Merk"])
+        col3.metric("Model / Type", info["Type"])
+        col4, col5, col6 = st.columns(3)
+        col4.metric("Nomor Seri (S/N)", info["Nomor Seri"])
+        col5.metric("Lokasi Ruangan", info["Ruangan"])
+        col6.metric("Tahun Pengadaan", info["Tahun Pengadaan"])
+        
+        st.markdown("---")
+        st.markdown("### 📜 Log & Riwayat Aktivitas Alat")
+        t_perbaikan, t_pemeliharaan, t_kalibrasi = st.tabs(["Riwayat Perbaikan", "Riwayat Pemeliharaan", "Riwayat Kalibrasi"])
+        
+        with t_perbaikan:
+            list_p = [x for x in data.get("Perbaikan", []) if str(x.get("Nomor Seri", "")).strip().lower() == ns_clean]
+            if list_p: st.dataframe(pd.DataFrame(list_p)[["Tanggal Perbaikan", "Kerusakan", "Tindakan", "Keterangan"]], use_container_width=True, hide_index=True)
+            else: st.info("Belum ada riwayat laporan kerusakan (Alat normal).")
+                
+        with t_pemeliharaan:
+            list_m = [x for x in data.get("Pemeliharaan", []) if str(x
