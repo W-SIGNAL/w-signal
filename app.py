@@ -5,7 +5,7 @@ import os
 import copy
 import io
 import base64
-import qrcode  # Menghasilkan QR code alat
+import qrcode
 from datetime import datetime, date
 
 # --- 0. SISTEM LOGIN MULTI-ROLE (ADMIN & USER PUBLIK) ---
@@ -15,7 +15,6 @@ def check_login():
         user_input = st.session_state.get("username_input", "").strip()
         pass_input = st.session_state.get("password_input", "").strip()
 
-        # Data Kredensial Account
         CREDENTIALS = {
             "NAY": {"pass": "lalanana", "role": "Admin", "nama": "NAY (Super Administrator)"},
             "GUEST": {"pass": "12345", "role": "User", "nama": "Teknisi Lapangan"}
@@ -88,7 +87,7 @@ if check_login():
     KOLOM_DEFAULT = {
         "Inventory Alkes": ["Nama Alat", "Merk", "Type", "Nomor Seri", "Tahun Pengadaan", "Harga Perolehan", "Kondisi Baik", "Kondisi KB", "Kondisi RB", "Ruangan"],
         "Perbaikan": ["Tanggal Perbaikan", "Nama Teknisi", "Nama Alat", "Merk", "Nomor Seri", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Foto", "Note"],
-        "Pemeliharaan": ["Tanggal Pemeliharaan", "Nama Teknisi", "Nama Alat", "Merk", "Nomor Seri", "Ruangan", "Keterangan", "Foto", "Note"],
+        "Pemeliharaan": ["Tanggal Pemeliharaan", "Nama Teknisi", "Nama Alat", "Merk", "Nomor Seri", "Ruangan", "Hasil Pemeliharaan", "Suhu/Kelembaban", "Kelistrikan", "Fungsi Alat", "Foto", "Note"],
         "Stok Suku Cadang": ["Nama Suku Cadang", "Spesifikasi", "Jumlah Stok", "Satuan", "In", "Out", "Keterangan"],
         "Perencanaan RAB (Usulan)": ["Sub Kegiatan", "Nama Kegiatan", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan", "Keterangan"],
         "Surat Masuk (Nota Dinas)": ["Tanggal Terima Surat", "Tanggal Surat", "Nomor Surat", "Perihal", "Asal Surat", "Keterangan"],
@@ -149,139 +148,13 @@ if check_login():
                 }
         return peta
 
-    def dapatkan_daftar_nama_alat_inventory():
-        inv_list = data.get("Inventory Alkes", [])
-        nama_set = set()
-        for item in inv_list:
-            nama = str(item.get("Nama Alat", "")).strip()
-            if nama:
-                nama_set.add(nama)
-        return sorted(list(nama_set))
-
-    def hitung_frekuensi_kerusakan():
-        perbaikan_list = data.get("Perbaikan", [])
-        counter = {}
-        for item in perbaikan_list:
-            ns = str(item.get("Nomor Seri", "")).strip().lower()
-            if ns:
-                counter[ns] = counter.get(ns, 0) + 1
-        return counter
-
-    def dapatkan_set_terkalibrasi():
-        kalibrasi_list = data.get("Kalibrasi", [])
-        ns_set = set()
-        for item in kalibrasi_list:
-            ns = str(item.get("Nomor Seri", "")).strip().lower()
-            if ns:
-                ns_set.add(ns)
-        return ns_set
-
-    def dapatkan_set_terpelihara():
-        pemeliharaan_list = data.get("Pemeliharaan", [])
-        ns_set = set()
-        for item in pemeliharaan_list:
-            ns = str(item.get("Nomor Seri", "")).strip().lower()
-            if ns:
-                ns_set.add(ns)
-        return ns_set
-
-    def recalculate_rab(rab_list):
-        df = pd.DataFrame(rab_list)
-        if df.empty: return rab_list
-        kolom_wajib = ["Sub Kegiatan", "Nama Kegiatan", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan", "Keterangan"]
-        for col in kolom_wajib:
-            if col not in df.columns: df[col] = 0 if "Pagu" in col or "Nilai" in col else ""
-                
-        df["Pagu Sub Kegiatan"] = df["Pagu Sub Kegiatan"].apply(lambda x: float(str(x).replace(',','').replace('.','')) if x else 0.0)
-        df["Nilai SPH"] = df["Nilai SPH"].apply(lambda x: float(str(x).replace(',','').replace('.','')) if x else 0.0)
-        df["Nilai Kontrak"] = df["Nilai Kontrak"].apply(lambda x: float(str(x).replace(',','').replace('.','')) if x else 0.0)
-        
-        master_pagu = {}
-        for idx, row in df.iterrows():
-            sub_keg = row["Sub Kegiatan"]
-            pagu_val = row["Pagu Sub Kegiatan"]
-            if sub_keg not in master_pagu and pagu_val > 0: master_pagu[sub_keg] = pagu_val
-                
-        sisa_list = []
-        current_pagu_tracker = master_pagu.copy() 
-        for idx, row in df.iterrows():
-            sub_keg = row["Sub Kegiatan"]
-            kontrak = row["Nilai Kontrak"]
-            pagu_induk = current_pagu_tracker.get(sub_keg, 0.0)
-            pagu_terbaru = pagu_induk - kontrak
-            sisa_list.append(int(pagu_terbaru))
-            current_pagu_tracker[sub_keg] = pagu_terbaru
-            if sub_keg in master_pagu: df.at[idx, "Pagu Sub Kegiatan"] = int(master_pagu[sub_keg])
-
-        df["Sisa Pagu Anggaran Kegiatan"] = sisa_list
-        return df.to_dict(orient="records")
-
-    def bersihkan_format_tanggal(val):
-        if pd.isna(val) or val == "" or str(val).strip() == "nan":
-            return ""
-        if isinstance(val, (datetime, date)):
-            return val.strftime('%Y-%m-%d')
-        val_str = str(val).strip()
-        if " " in val_str:
-            val_str = val_str.split(" ")[0]
-        return val_str
-
-    def handle_editor_change(menu_key, editor_key):
-        if editor_key in st.session_state:
-            raw_editor_data = st.session_state[editor_key]
-            if raw_editor_data.get("edited_rows") or raw_editor_data.get("added_rows") or raw_editor_data.get("deleted_rows"):
-                st.session_state["undo_history"].append(copy.deepcopy(st.session_state["w_signal_db"]))
-                df_current = pd.DataFrame(data[menu_key])
-                
-                if menu_key in KOLOM_DEFAULT:
-                    for col in KOLOM_DEFAULT[menu_key]:
-                        if col not in df_current.columns:
-                            df_current[col] = 0 if col in ["Jumlah Stok", "In", "Out", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan", "Harga Perolehan"] else ""
-                
-                for row_idx, changes in raw_editor_data.get("edited_rows", {}).items():
-                    for col, val in changes.items():
-                        if col in df_current.columns: 
-                            df_current.iat[row_idx, df_current.columns.get_loc(col)] = val
-                            
-                for new_row in raw_editor_data.get("added_rows", []):
-                    df_current = pd.concat([df_current, pd.DataFrame([new_row])], ignore_index=True)
-                    
-                deleted_indices = raw_editor_data.get("deleted_rows", [])
-                if deleted_indices: 
-                    df_current = df_current.drop(deleted_indices).reset_index(drop=True)
-                    
-                kolom_tanggal_sistem = ["Tanggal Perbaikan", "Tanggal Pemeliharaan", "Tanggal Kalibrasi", "Tanggal", "Tanggal Terima Surat", "Tanggal Surat", "Kalibrasi Ulang"]
-                for col in kolom_tanggal_sistem:
-                    if col in df_current.columns:
-                        df_current[col] = df_current[col].apply(bersihkan_format_tanggal)
-
-                temp_dict = df_current.fillna("").to_dict(orient="records")
-                if menu_key == "Perencanaan RAB (Usulan)": 
-                    temp_dict = recalculate_rab(temp_dict)
-                
-                st.session_state["w_signal_db"][menu_key] = temp_dict
-                save_data(st.session_state["w_signal_db"])
-
-    def convert_df_to_excel(df_to_download):
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df_to_download.to_excel(writer, index=False, sheet_name='Data Rekap')
-        return output.getvalue()
-
-    # --- 7. SIDEBAR & PEMBATASAN HAK AKSES ---
+    # --- 7. SIDEBAR & MENU ---
     st.sidebar.header("↩️ KONTROL DATA")
     st.sidebar.caption(f"Status: **{nama_aktif}** ({role_aktif})")
     
     if st.sidebar.button("🚪 Logout / Keluar", use_container_width=True):
         st.session_state["login_success"] = False
         st.rerun()
-
-    if role_aktif == "Admin" and st.session_state["undo_history"]:
-        if st.sidebar.button("↩️ Undo Perubahan Terakhir", use_container_width=True):
-            st.session_state["w_signal_db"] = st.session_state["undo_history"].pop()
-            save_data(st.session_state["w_signal_db"])
-            st.success("Perubahan terakhir berhasil dibatalkan!")
-            st.rerun()
 
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 SCAN / CARI ALAT")
@@ -291,4 +164,162 @@ if check_login():
     st.sidebar.header("Pilih Menu:")
 
     if role_aktif == "Admin":
-        menu_
+        menu_pilihan = [
+            "Inventory Alkes", "Perbaikan", "Pemeliharaan", "Stok Suku Cadang",
+            "Perencanaan RAB (Usulan)", "Surat Masuk (Nota Dinas)", "Rekap SR Vendor", 
+            "Kalibrasi", "Lihat Semua Data & Ringkasan", "Manajemen SOP Alkes"
+        ]
+    else:
+        menu_pilihan = ["Perbaikan", "Pemeliharaan"]
+
+    selected_menu = st.sidebar.radio("Navigasi Menu", menu_pilihan, label_visibility="collapsed")
+
+    # Notifikasi Super Admin
+    if role_aktif == "Admin":
+        total_perbaikan_notif = len(data.get('Perbaikan', []))
+        total_pemeliharaan_notif = len(data.get('Pemeliharaan', []))
+        
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🔔 Pusat Notifikasi Admin")
+        st.sidebar.info(f"📢 Total Laporan Masuk:\n* **Perbaikan:** {total_perbaikan_notif} Laporan\n* **Pemeliharaan:** {total_pemeliharaan_notif} Kegiatan")
+
+    if selected_menu == "Lihat Semua Data & Ringkasan" and role_aktif == "Admin":
+        st.header("📋 Ringkasan Analisis Data W-SIGNAL")
+        inv_list_data = data.get('Inventory Alkes', [])
+        total_inv_count = len(inv_list_data)
+        baik_count = sum(1 for item in inv_list_data if str(item.get("Kondisi Baik", "")).strip() in ["✓", "1", "True", "true"])
+        kb_count = sum(1 for item in inv_list_data if str(item.get("Kondisi KB", "")).strip() in ["✓", "1", "True", "true"])
+        rb_count = sum(1 for item in inv_list_data if str(item.get("Kondisi RB", "")).strip() in ["✓", "1", "True", "true"])
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Inventory", f"{total_inv_count} Unit")
+        col2.metric("Total Pemeliharaan", f"{len(data.get('Pemeliharaan', []))} Kegiatan")
+        col3.metric("Total Kalibrasi", f"{len(data.get('Kalibrasi', []))} Data")
+        
+        st.markdown("---")
+        tabs = st.tabs(list(KOLOM_DEFAULT.keys()))
+        for i, key in enumerate(list(KOLOM_DEFAULT.keys())):
+            with tabs[i]:
+                df_tab = pd.DataFrame(data[key])
+                st.dataframe(df_tab, use_container_width=True)
+
+    else:
+        st.header(f"📋 Menu: {selected_menu}")
+        
+        # --- FORM INPUT PERBAIKAN & PEMELIHARAAN (LK IPM) ---
+        with st.form(key=f"form_{selected_menu.lower().replace(' ', '_')}", clear_on_submit=True):
+            inputs = {}
+            uploaded_photo = None
+
+            if selected_menu == "Perbaikan":
+                st.markdown("### 📥 Form Input Perbaikan Alkes")
+                inputs["Tanggal Perbaikan"] = st.date_input("Tanggal Perbaikan").strftime('%Y-%m-%d')
+                inputs["Nama Teknisi"] = st.text_input("Nama Teknisi")
+                inputs["Nama Alat"] = st.text_input("Nama Alat")
+                inputs["Merk"] = st.text_input("Merk / Tipe")
+                inputs["Nomor Seri"] = st.text_input("Nomor Seri (SN)")
+                inputs["Ruangan"] = st.text_input("Ruangan")
+                inputs["Kerusakan"] = st.text_area("Kerusakan")
+                inputs["Tindakan"] = st.text_area("Tindakan")
+                inputs["Keterangan"] = st.text_input("Keterangan")
+                uploaded_photo = st.file_uploader("📷 Upload Foto Perbaikan (.jpg, .png):", type=["jpg", "jpeg", "png"])
+                inputs["Note"] = ""
+
+            elif selected_menu == "Pemeliharaan":
+                st.markdown("### 📋 Form Input Pemeliharaan & Lembar Kerja (LK IPM)")
+                
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    inputs["Tanggal Pemeliharaan"] = st.date_input("Tanggal Pemeliharaan").strftime('%Y-%m-%d')
+                    inputs["Nama Teknisi"] = st.text_input("Nama Teknisi")
+                    inputs["Nama Alat"] = st.text_input("Nama Alat")
+                with col_p2:
+                    inputs["Merk"] = st.text_input("Merk / Tipe")
+                    inputs["Nomor Seri"] = st.text_input("Nomor Seri (SN)")
+                    inputs["Ruangan"] = st.text_input("Ruangan")
+
+                st.markdown("---")
+                st.markdown("#### 🔬 Isian Lembar Kerja (LK IPM Elektromedis)")
+                
+                lk_col1, lk_col2 = st.columns(2)
+                with lk_col1:
+                    suhu = st.text_input("Suhu Ruangan (°C)", value="25")
+                    kelembaban = st.text_input("Kelembaban (%)", value="60")
+                    inputs["Suhu/Kelembaban"] = f"Suhu: {suhu}°C, Kelembaban: {kelembaban}%"
+                    
+                    tegangan = st.text_input("Tegangan Jala-jala (V)", value="220")
+                    stabilizer = st.selectbox("Stabilizer / Grounding", ["Baik / Normal", "Tidak Normal", "N/A"])
+                    inputs["Kelistrikan"] = f"Tegangan: {tegangan}V, Stabilizer: {stabilizer}"
+
+                with lk_col2:
+                    fisik = st.selectbox("Pemeriksaan Fisik & Penempatan", ["Baik", "Kurang Baik", "Rusak Berat"])
+                    fungsi = st.selectbox("Pemeriksaan Fungsi Alat (Switch, Keypad, Alarm)", ["Normal / Berfungsi Baik", "Gangguan / Rusak"])
+                    inputs["Fungsi Alat"] = f"Fisik: {fisik}, Fungsi: {fungsi}"
+
+                inputs["Hasil Pemeliharaan"] = st.selectbox("Kesimpulan Hasil Pemeliharaan", ["Laik Pakai / Normal", "Perlu Perbaikan Lanjutan", "Tidak Laik Pakai"])
+                inputs["Keterangan"] = st.text_input("Keterangan Tambahan / Catatan LK")
+                
+                uploaded_photo = st.file_uploader("📷 Upload Foto Alat / Lembar Kerja (.jpg, .png):", type=["jpg", "jpeg", "png"])
+                inputs["Note"] = ""
+
+            elif role_aktif == "Admin":
+                if selected_menu == "Inventory Alkes":
+                    inputs["Nama Alat"] = st.text_input("Nama Alat")
+                    inputs["Merk"] = st.text_input("Merk")
+                    inputs["Type"] = st.text_input("Type")
+                    inputs["Nomor Seri"] = st.text_input("Nomor Seri")
+                    inputs["Tahun Pengadaan"] = st.text_input("Tahun Pengadaan")
+                    inputs["Harga Perolehan"] = st.number_input("Harga Perolehan (Rp)", min_value=0.0, step=1000.0)
+                    inputs["Ruangan"] = st.text_input("Ruangan")
+
+            submit_button = st.form_submit_button(label="➕ Kirim & Simpan Laporan")
+            if submit_button:
+                if uploaded_photo is not None:
+                    bytes_data = uploaded_photo.read()
+                    encoded_img = base64.b64encode(bytes_data).decode('utf-8')
+                    inputs["Foto"] = encoded_img
+                else:
+                    inputs["Foto"] = ""
+
+                # Auto-fill dari database inventory jika nomor seri cocok
+                if selected_menu in ["Perbaikan", "Pemeliharaan"]:
+                    peta_inv = dapatkan_peta_inventory()
+                    ns_key = str(inputs.get("Nomor Seri", "")).strip().lower()
+                    if ns_key in peta_inv:
+                        if not inputs.get("Nama Alat"): inputs["Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
+                        if not inputs.get("Merk"): inputs["Merk"] = peta_inv[ns_key]["Merk"]
+                        if not inputs.get("Ruangan"): inputs["Ruangan"] = peta_inv[ns_key]["Ruangan"]
+
+                st.session_state["w_signal_db"][selected_menu].append(inputs)
+                save_data(st.session_state["w_signal_db"])
+                st.success(f"Laporan {selected_menu} berhasil dikirim dan tercatat di Super Admin!")
+                st.rerun()
+
+        # TABEL RIWAYAT & GALERI FOTO
+        st.markdown("---")
+        st.markdown("### 📝 Tabel & Galeri Riwayat Laporan")
+        menu_data = data.get(selected_menu, [])
+        df_menu = pd.DataFrame(menu_data)
+
+        if not df_menu.empty:
+            df_display = df_menu.copy()
+            if "Foto" in df_display.columns:
+                df_display["Foto Status"] = df_display["Foto"].apply(lambda x: "🖼️ Ada Foto" if x else "Tidak Ada")
+                df_display = df_display.drop(columns=["Foto"])
+            
+            st.dataframe(df_display, use_container_width=True)
+
+            if "Foto" in df_menu.columns:
+                st.markdown("#### 🖼️ Galeri Foto Bukti Laporan:")
+                cols = st.columns(3)
+                idx_col = 0
+                for idx, row in df_menu.iterrows():
+                    if row.get("Foto"):
+                        with cols[idx_col % 3]:
+                            try:
+                                img_bytes = base64.b64decode(row["Foto"])
+                                teknisi_info = f"Teknisi: {row.get('Nama Teknisi', 'Umum')}"
+                                st.image(img_bytes, caption=f"{row.get('Nama Alat', 'Alat')} ({row.get('Nomor Seri', '')}) - {teknisi_info}", use_container_width=True)
+                            except Exception:
+                                pass
+                        idx_col += 1
