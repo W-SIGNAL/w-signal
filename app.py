@@ -206,7 +206,7 @@ if check_login():
     else:
         st.header(f"📋 Menu: {selected_menu}")
         
-        # --- FORM INPUT PERBAIKAN & PEMELIHARAAN (LK SERVICE & LK IPM) ---
+        # --- FORM INPUT PERBAIKAN & PEMELIHARAAN ---
         with st.form(key=f"form_{selected_menu.lower().replace(' ', '_')}", clear_on_submit=True):
             inputs = {}
             uploaded_photo = None
@@ -299,6 +299,43 @@ if check_login():
                     peta_inv = dapatkan_peta_inventory()
                     ns_key = str(inputs.get("Nomor Seri", "")).strip().lower()
                     if ns_key in peta_inv:
-                        if not inputs.get("Nama Alat"): inputs["Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
-                        if not inputs.get("Merk"): inputs["Merk"] = peta_inv[ns_key]["Merk"]
-                        if not inputs.get("Ruangan"): inputs["Ruangan"] =
+                        if not inputs.get("Nama Alat"):
+                            inputs["Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
+                        if not inputs.get("Merk"):
+                            inputs["Merk"] = peta_inv[ns_key]["Merk"]
+                        if not inputs.get("Ruangan"):
+                            inputs["Ruangan"] = peta_inv[ns_key]["Ruangan"]
+
+                st.session_state["w_signal_db"][selected_menu].append(inputs)
+                save_data(st.session_state["w_signal_db"])
+                st.success(f"Laporan {selected_menu} berhasil dikirim dan tercatat di Super Admin!")
+                st.rerun()
+
+        # TABEL RIWAYAT & GALERI FOTO
+        st.markdown("---")
+        st.markdown("### 📝 Tabel & Galeri Riwayat Laporan")
+        menu_data = data.get(selected_menu, [])
+        df_menu = pd.DataFrame(menu_data)
+
+        if not df_menu.empty:
+            df_display = df_menu.copy()
+            if "Foto" in df_display.columns:
+                df_display["Foto Status"] = df_display["Foto"].apply(lambda x: "🖼️ Ada Foto" if x else "Tidak Ada")
+                df_display = df_display.drop(columns=["Foto"])
+            
+            st.dataframe(df_display, use_container_width=True)
+
+            if "Foto" in df_menu.columns:
+                st.markdown("#### 🖼️ Galeri Foto Bukti Laporan:")
+                cols = st.columns(3)
+                idx_col = 0
+                for idx, row in df_menu.iterrows():
+                    if row.get("Foto"):
+                        with cols[idx_col % 3]:
+                            try:
+                                img_bytes = base64.b64decode(row["Foto"])
+                                teknisi_info = f"Teknisi: {row.get('Nama Teknisi', 'Umum')}"
+                                st.image(img_bytes, caption=f"{row.get('Nama Alat', 'Alat')} ({row.get('Nomor Seri', '')}) - {teknisi_info}", use_container_width=True)
+                            except Exception:
+                                pass
+                        idx_col += 1
