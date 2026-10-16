@@ -206,7 +206,7 @@ if check_login():
     else:
         st.header(f"📋 Menu: {selected_menu}")
         
-        # --- FORM INPUT PERBAIKAN & PEMELIHARAAN ---
+        # --- FORM INPUT PERBAIKAN & PEMELIHARAAN (INPUT UNTUK GUEST & ADMIN) ---
         with st.form(key=f"form_{selected_menu.lower().replace(' ', '_')}", clear_on_submit=True):
             inputs = {}
             uploaded_photo = None
@@ -311,31 +311,43 @@ if check_login():
                 st.success(f"Laporan {selected_menu} berhasil dikirim dan tercatat di Super Admin!")
                 st.rerun()
 
-        # TABEL RIWAYAT & GALERI FOTO
-        st.markdown("---")
-        st.markdown("### 📝 Tabel & Galeri Riwayat Laporan")
-        menu_data = data.get(selected_menu, [])
-        df_menu = pd.DataFrame(menu_data)
+        # --- REKAPITULASI & GALERI FOTO HANYA TAMPIL UNTUK SUPER ADMIN (NAY) ---
+        if role_aktif == "Admin":
+            st.markdown("---")
+            st.markdown("### 📝 Tabel & Galeri Riwayat Laporan (Pusat Data Admin)")
+            menu_data = data.get(selected_menu, [])
+            df_menu = pd.DataFrame(menu_data)
 
-        if not df_menu.empty:
-            df_display = df_menu.copy()
-            if "Foto" in df_display.columns:
-                df_display["Foto Status"] = df_display["Foto"].apply(lambda x: "🖼️ Ada Foto" if x else "Tidak Ada")
-                df_display = df_display.drop(columns=["Foto"])
-            
-            st.dataframe(df_display, use_container_width=True)
+            if not df_menu.empty:
+                df_display = df_menu.copy()
+                if "Foto" in df_display.columns:
+                    df_display["Foto Status"] = df_display["Foto"].apply(lambda x: "🖼️ Ada Foto" if x else "Tidak Ada")
+                    df_display = df_display.drop(columns=["Foto"])
+                
+                st.dataframe(df_display, use_container_width=True)
 
-            if "Foto" in df_menu.columns:
-                st.markdown("#### 🖼️ Galeri Foto Bukti Laporan:")
-                cols = st.columns(3)
-                idx_col = 0
-                for idx, row in df_menu.iterrows():
-                    if row.get("Foto"):
-                        with cols[idx_col % 3]:
-                            try:
-                                img_bytes = base64.b64decode(row["Foto"])
-                                teknisi_info = f"Teknisi: {row.get('Nama Teknisi', 'Umum')}"
-                                st.image(img_bytes, caption=f"{row.get('Nama Alat', 'Alat')} ({row.get('Nomor Seri', '')}) - {teknisi_info}", use_container_width=True)
-                            except Exception:
-                                pass
-                        idx_col += 1
+                if "Foto" in df_menu.columns:
+                    st.markdown("#### 🖼️ Galeri Foto Bukti Laporan:")
+                    cols = st.columns(3)
+                    idx_col = 0
+                    for idx, row in df_menu.iterrows():
+                        if row.get("Foto"):
+                            with cols[idx_col % 3]:
+                                try:
+                                    img_bytes = base64.b64decode(row["Foto"])
+                                    teknisi_info = f"Teknisi: {row.get('Nama Teknisi', 'Umum')}"
+                                    st.image(img_bytes, caption=f"{row.get('Nama Alat', 'Alat')} ({row.get('Nomor Seri', '')}) - {teknisi_info}", use_container_width=True)
+                                except Exception:
+                                    pass
+                            idx_col += 1
+
+    if search_ns:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🔍 Hasil Pencarian Alat:")
+        peta = dapatkan_peta_inventory()
+        ns_clean = search_ns.strip().lower()
+        if ns_clean in peta:
+            info = peta[ns_clean]
+            st.sidebar.success(f"**Alat Ditemukan!**\n\n* **Nama:** {info['Nama Alat']}\n* **Merk:** {info['Merk']}\n* **Type:** {info['Type']}\n* **Ruangan:** {info['Ruangan']}")
+        else:
+            st.sidebar.warning("Nomor Seri belum terdaftar di Inventory Alkes.")
