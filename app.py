@@ -3,41 +3,7 @@ import pandas as pd
 import json
 import os
 import base64
-import qrcode
 from datetime import datetime, date
-
-# --- IMPOR GSPREAD ---
-try:
-    import gspread
-    from google.oauth2.service_account import Credentials
-    GSPREAD_AVAILABLE = True
-except ImportError:
-    GSPREAD_AVAILABLE = False
-
-# URL Google Sheet Anda
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1LNy2HFfrDpRQu0tG-afxGG-HaSJh5ewIVGUopttb2qs/edit?usp=sharing"
-
-# --- Koneksi Google Sheets Tanpa JSON Rahasia (Berbasis Publik Link Editor) ---
-def get_gspread_client():
-    if not GSPREAD_AVAILABLE:
-        return None
-    try:
-        # Jika menggunakan gspread dengan metode authorized public/oauth atau json secrets
-        if "gcp_service_account" in st.secrets:
-            scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-            creds_dict = dict(st.secrets["gcp_service_account"])
-            from oauth2client.service_account import ServiceAccountCredentials
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-            client = gspread.authorize(creds)
-            return client
-        else:
-            # Fallback jika ingin menggunakan gspread tanpa credentials (untuk sheet public edit)
-            # Menggunakan gspread anonymous / gspread.no_credentials() jika didukung versi gspread, 
-            # atau kita gunakan pandas untuk membaca CSV publik jika lebih stabil.
-            pass
-    except Exception:
-        pass
-    return None
 
 # --- STRUKTUR KOLOM DEFAULT ---
 KOLOM_DEFAULT = {
@@ -51,58 +17,8 @@ KOLOM_DEFAULT = {
     "Kalibrasi": ["Tanggal Kalibrasi", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Keterangan", "Kalibrasi Ulang"]
 }
 
-def load_data_from_gsheets():
-    database = {}
-    client = get_gspread_client()
-    if client:
-        try:
-            sh = client.open_by_url(SPREADSHEET_URL)
-            for sheet_name in KOLOM_DEFAULT.keys():
-                try:
-                    worksheet = sh.worksheet(sheet_name)
-                    records = worksheet.get_all_records()
-                    database[sheet_name] = records if records else []
-                except Exception:
-                    database[sheet_name] = []
-        except Exception:
-            database = fallback_load_local()
-    else:
-        # Membaca langsung via export CSV Google Sheets secara publik (Sangat stabil & tanpa login robot!)
-        try:
-            for sheet_name in KOLOM_DEFAULT.keys():
-                csv_url = f"{SPREADSHEET_URL.split('/edit')[0]}/gviz/tq?tqx=out:csv&sheet={sheet_name.replace(' ', '%20')}"
-                df = pd.read_csv(csv_url)
-                database[sheet_name] = df.to_dict(orient="records")
-        except Exception:
-            database = fallback_load_local()
-
-    if "SOP_Files" not in database:
-        database["SOP_Files"] = {}
-    return database
-
-def save_row_to_gsheets(sheet_name, row_data):
-    client = get_gspread_client()
-    if client:
-        try:
-            sh = client.open_by_url(SPREADSHEET_URL)
-            worksheet = sh.worksheet(sheet_name)
-            headers = KOLOM_DEFAULT.get(sheet_name, list(row_data.keys()))
-            row_values = [row_data.get(h, "") for h in headers]
-            worksheet.append_row(row_values)
-            return True
-        except Exception as e:
-            st.error(f"Gagal menyimpan ke Google Sheets: {e}")
-            return False
-    else:
-        # Simpan lokal sebagai backup jika gspread belum terkonfigurasi penuh
-        db = st.session_state.get("w_signal_db", {})
-        if sheet_name not in db:
-            db[sheet_name] = []
-        db[sheet_name].append(row_data)
-        fallback_save_local(db)
-        return True
-
-def fallback_load_local():
+# --- PENYIMPANAN LOKAL YANG STABIL & GRATIS ---
+def load_data_local():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
     DB_FILE = os.path.join(BASE_DIR, "database_w_signal.json")
     loaded_db = {}
@@ -115,17 +31,20 @@ def fallback_load_local():
     for k in KOLOM_DEFAULT.keys():
         if k not in loaded_db:
             loaded_db[k] = []
+    if "SOP_Files" not in loaded_db:
+        loaded_db["SOP_Files"] = {}
     return loaded_db
 
-def fallback_save_local(data_to_save):
+def save_data_local(data_to_save):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
     DB_FILE = os.path.join(BASE_DIR, "database_w_signal.json")
     try:
         with open(DB_FILE, "w") as f:
             json.dump(data_to_save, f, indent=4)
-    except Exception:
-        pass
-
+        return True
+    except Exception as e:
+        st.error(f"Gagal menyimpan data: {e}")
+        return False
 
 # --- SISTEM LOGIN MULTI-ROLE ---
 def check_login():
@@ -172,11 +91,9 @@ if check_login():
     st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
 
     if "w_signal_db" not in st.session_state:
-        st.session_state["w_signal_db"] = load_data_from_gsheets()
+        st.session_state["w_signal_db"] = load_data_local()
     
     data = st.session_state["w_signal_db"]
-    query_params = st.query_params
-    url_no_seri = query_params.get("no_seri", "").strip()
 
     def dapatkan_peta_inventory():
         inv_list = data.get("Inventory Alkes", [])
@@ -202,17 +119,13 @@ if check_login():
         st.rerun()
 
     st.sidebar.markdown("---")
-    st.sidebar.header("🔍 SCAN / CARI ALAT")
-    search_ns = st.sidebar.text_input("Arahkan kursor & Scan Barcode:", value=url_no_seri)
-
-    st.sidebar.markdown("---")
     st.sidebar.header("Pilih Menu:")
 
     if role_aktif == "Admin":
         menu_pilihan = [
             "Inventory Alkes", "Perbaikan", "Pemeliharaan", "Stok Suku Cadang",
             "Perencanaan RAB (Usulan)", "Surat Masuk (Nota Dinas)", "Rekap SR Vendor", 
-            "Kalibrasi", "Lihat Semua Data & Ringkasan", "Manajemen SOP Alkes"
+            "Kalibrasi", "Lihat Semua Data & Ringkasan"
         ]
     else:
         menu_pilihan = ["Perbaikan", "Pemeliharaan"]
@@ -227,9 +140,9 @@ if check_login():
         st.sidebar.info(f"📢 Total Laporan Masuk:\n* **Perbaikan:** {total_perbaikan_notif} Laporan\n* **Pemeliharaan:** {total_pemeliharaan_notif} Kegiatan")
 
     if selected_menu == "Lihat Semua Data & Ringkasan" and role_aktif == "Admin":
-        st.header("📋 Ringkasan Analisis Data W-SIGNAL (Google Sheets)")
-        if st.button("🔄 Segarkan / Tarik Data Terbaru"):
-            st.session_state["w_signal_db"] = load_data_from_gsheets()
+        st.header("📋 Ringkasan Analisis Data W-SIGNAL")
+        if st.button("🔄 Segarkan Data"):
+            st.session_state["w_signal_db"] = load_data_local()
             st.rerun()
 
         tabs = st.tabs(list(KOLOM_DEFAULT.keys()))
@@ -321,6 +234,10 @@ if check_login():
                     inputs["Kondisi KB"] = st.selectbox("Kondisi KB", ["-", "✓"])
                     inputs["Kondisi RB"] = st.selectbox("Kondisi RB", ["-", "✓"])
                     inputs["Ruangan"] = st.text_input("Ruangan")
+                elif selected_menu in ["Stok Suku Cadang", "Perencanaan RAB (Usulan)", "Surat Masuk (Nota Dinas)", "Rekap SR Vendor", "Kalibrasi"]:
+                    headers = KOLOM_DEFAULT.get(selected_menu, [])
+                    for h in headers:
+                        inputs[h] = st.text_input(h)
 
             submit_button = st.form_submit_button(label="➕ Kirim & Simpan Laporan")
             if submit_button:
@@ -336,17 +253,20 @@ if check_login():
                         if not inputs.get("Merk"): inputs["Merk"] = peta_inv[ns_key]["Merk"]
                         if not inputs.get("Ruangan"): inputs["Ruangan"] = peta_inv[ns_key]["Ruangan"]
 
-                success = save_row_to_gsheets(selected_menu, inputs)
-                if success:
-                    st.session_state["w_signal_db"] = load_data_from_gsheets()
-                    st.success(f"Laporan {selected_menu} berhasil dikirim dan otomatis terekap di Super Admin!")
+                if selected_menu not in data:
+                    data[selected_menu] = []
+                data[selected_menu].append(inputs)
+                
+                if save_data_local(data):
+                    st.session_state["w_signal_db"] = data
+                    st.success(f"Laporan {selected_menu} berhasil disimpan dan otomatis masuk ke pusat data Admin!")
                     st.rerun()
 
         if role_aktif == "Admin":
             st.markdown("---")
             st.markdown("### 📝 Tabel & Galeri Riwayat Laporan (Pusat Data Admin)")
-            if st.button("🔄 Refresh Data Google Sheets"):
-                st.session_state["w_signal_db"] = load_data_from_gsheets()
+            if st.button("🔄 Refresh Data"):
+                st.session_state["w_signal_db"] = load_data_local()
                 st.rerun()
 
             menu_data = data.get(selected_menu, [])
