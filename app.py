@@ -86,8 +86,8 @@ if check_login():
     # --- STRUKTUR KOLOM DEFAULT ---
     KOLOM_DEFAULT = {
         "Inventory Alkes": ["Nama Alat", "Merk", "Type", "Nomor Seri", "Tahun Pengadaan", "Harga Perolehan", "Kondisi Baik", "Kondisi KB", "Kondisi RB", "Ruangan"],
-        "Perbaikan": ["Tanggal Perbaikan", "Nama Teknisi", "Nama Alat", "Merk", "Nomor Seri", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Foto", "Note"],
-        "Pemeliharaan": ["Tanggal Pemeliharaan", "Nama Teknisi", "Nama Alat", "Merk", "Nomor Seri", "Ruangan", "Hasil Pemeliharaan", "Suhu/Kelembaban", "Kelistrikan", "Fungsi Alat", "Foto", "Note"],
+        "Perbaikan": ["Tanggal Perbaikan", "Nama Teknisi", "Nama Alat", "Merk", "Nomor Seri", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Isian LK Service", "Foto", "Note"],
+        "Pemeliharaan": ["Tanggal Pemeliharaan", "Nama Teknisi", "Nama Alat", "Merk", "Nomor Seri", "Ruangan", "Hasil Pemeliharaan", "Isian LK IPM", "Foto", "Note"],
         "Stok Suku Cadang": ["Nama Suku Cadang", "Spesifikasi", "Jumlah Stok", "Satuan", "In", "Out", "Keterangan"],
         "Perencanaan RAB (Usulan)": ["Sub Kegiatan", "Nama Kegiatan", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan", "Keterangan"],
         "Surat Masuk (Nota Dinas)": ["Tanggal Terima Surat", "Tanggal Surat", "Nomor Surat", "Perihal", "Asal Surat", "Keterangan"],
@@ -206,22 +206,41 @@ if check_login():
     else:
         st.header(f"📋 Menu: {selected_menu}")
         
-        # --- FORM INPUT PERBAIKAN & PEMELIHARAAN (LK IPM) ---
+        # --- FORM INPUT PERBAIKAN & PEMELIHARAAN (LK SERVICE & LK IPM) ---
         with st.form(key=f"form_{selected_menu.lower().replace(' ', '_')}", clear_on_submit=True):
             inputs = {}
             uploaded_photo = None
 
             if selected_menu == "Perbaikan":
-                st.markdown("### 📥 Form Input Perbaikan Alkes")
-                inputs["Tanggal Perbaikan"] = st.date_input("Tanggal Perbaikan").strftime('%Y-%m-%d')
-                inputs["Nama Teknisi"] = st.text_input("Nama Teknisi")
-                inputs["Nama Alat"] = st.text_input("Nama Alat")
-                inputs["Merk"] = st.text_input("Merk / Tipe")
-                inputs["Nomor Seri"] = st.text_input("Nomor Seri (SN)")
-                inputs["Ruangan"] = st.text_input("Ruangan")
-                inputs["Kerusakan"] = st.text_area("Kerusakan")
-                inputs["Tindakan"] = st.text_area("Tindakan")
+                st.markdown("### 📥 Form Input Perbaikan Alkes & LK Service")
+                
+                col_s1, col_s2 = st.columns(2)
+                with col_s1:
+                    inputs["Tanggal Perbaikan"] = st.date_input("Tanggal Perbaikan").strftime('%Y-%m-%d')
+                    inputs["Nama Teknisi"] = st.text_input("Nama Teknisi")
+                    inputs["Nama Alat"] = st.text_input("Nama Alat")
+                with col_s2:
+                    inputs["Merk"] = st.text_input("Merk / Tipe")
+                    inputs["Nomor Seri"] = st.text_input("Nomor Seri (SN)")
+                    inputs["Ruangan"] = st.text_input("Ruangan")
+
+                inputs["Kerusakan"] = st.text_area("Uraian Kerusakan")
+                inputs["Tindakan"] = st.text_area("Tindakan Perbaikan")
                 inputs["Keterangan"] = st.text_input("Keterangan")
+
+                st.markdown("---")
+                st.markdown("#### 🔧 Isian Lembar Kerja (LK Service Elektromedis)")
+                lk_s1, lk_s2 = st.columns(2)
+                with lk_s1:
+                    suhu_s = st.text_input("Suhu Ruangan (°C)", value="25", key="suhu_serv")
+                    kelembaban_s = st.text_input("Kelembaban (%)", value="60", key="kel_serv")
+                    tegangan_s = st.text_input("Tegangan Jala-jala (V)", value="220", key="teg_serv")
+                    env_s = f"Suhu: {suhu_s}°C, Kelembaban: {kelembaban_s}%, Tegangan: {tegangan_s}V"
+                with lk_s2:
+                    fisik_s = st.selectbox("Pemeriksaan Fisik / Main Unit / Aksesoris", ["Baik", "Kurang Baik", "Rusak"], key="fisik_serv")
+                    fungsi_s = st.selectbox("Pengujian Fungsi (Switch, Keypad, Alarm)", ["Normal", "Gangguan"], key="fungsi_serv")
+                    inputs["Isian LK Service"] = f"{env_s} | Fisik: {fisik_s}, Fungsi: {fungsi_s}"
+
                 uploaded_photo = st.file_uploader("📷 Upload Foto Perbaikan (.jpg, .png):", type=["jpg", "jpeg", "png"])
                 inputs["Note"] = ""
 
@@ -238,27 +257,21 @@ if check_login():
                     inputs["Nomor Seri"] = st.text_input("Nomor Seri (SN)")
                     inputs["Ruangan"] = st.text_input("Ruangan")
 
+                inputs["Hasil Pemeliharaan"] = st.selectbox("Hasil Pemeliharaan", ["Laik Pakai / Normal", "Perlu Perbaikan Lanjutan", "Tidak Laik Pakai"])
+
                 st.markdown("---")
                 st.markdown("#### 🔬 Isian Lembar Kerja (LK IPM Elektromedis)")
-                
-                lk_col1, lk_col2 = st.columns(2)
-                with lk_col1:
-                    suhu = st.text_input("Suhu Ruangan (°C)", value="25")
-                    kelembaban = st.text_input("Kelembaban (%)", value="60")
-                    inputs["Suhu/Kelembaban"] = f"Suhu: {suhu}°C, Kelembaban: {kelembaban}%"
-                    
-                    tegangan = st.text_input("Tegangan Jala-jala (V)", value="220")
-                    stabilizer = st.selectbox("Stabilizer / Grounding", ["Baik / Normal", "Tidak Normal", "N/A"])
-                    inputs["Kelistrikan"] = f"Tegangan: {tegangan}V, Stabilizer: {stabilizer}"
+                lk_c1, lk_c2 = st.columns(2)
+                with lk_c1:
+                    suhu_p = st.text_input("Suhu Ruangan (°C)", value="25", key="suhu_ipm")
+                    kelembaban_p = st.text_input("Kelembaban (%)", value="60", key="kel_ipm")
+                    ground_p = st.text_input("Ground Resistance (Ω)", value="< 0.5", key="ground_ipm")
+                with lk_c2:
+                    stabilizer_p = st.selectbox("Stabilizer / Kelistrikan", ["Normal", "Tidak Normal"], key="stab_ipm")
+                    fungsi_p = st.selectbox("Fungsi & Kelengkapan Alat", ["Lengkap & Berfungsi Baik", "Ada Catatan"], key="fungsi_ipm")
+                    inputs["Isian LK IPM"] = f"Suhu: {suhu_p}°C, Kelembaban: {kelembaban_p}%, Ground: {ground_p}Ω, Stabilizer: {stabilizer_p}, Fungsi: {fungsi_p}"
 
-                with lk_col2:
-                    fisik = st.selectbox("Pemeriksaan Fisik & Penempatan", ["Baik", "Kurang Baik", "Rusak Berat"])
-                    fungsi = st.selectbox("Pemeriksaan Fungsi Alat (Switch, Keypad, Alarm)", ["Normal / Berfungsi Baik", "Gangguan / Rusak"])
-                    inputs["Fungsi Alat"] = f"Fisik: {fisik}, Fungsi: {fungsi}"
-
-                inputs["Hasil Pemeliharaan"] = st.selectbox("Kesimpulan Hasil Pemeliharaan", ["Laik Pakai / Normal", "Perlu Perbaikan Lanjutan", "Tidak Laik Pakai"])
-                inputs["Keterangan"] = st.text_input("Keterangan Tambahan / Catatan LK")
-                
+                inputs["Keterangan"] = st.text_input("Keterangan / Catatan Pemeliharaan")
                 uploaded_photo = st.file_uploader("📷 Upload Foto Alat / Lembar Kerja (.jpg, .png):", type=["jpg", "jpeg", "png"])
                 inputs["Note"] = ""
 
@@ -288,38 +301,4 @@ if check_login():
                     if ns_key in peta_inv:
                         if not inputs.get("Nama Alat"): inputs["Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
                         if not inputs.get("Merk"): inputs["Merk"] = peta_inv[ns_key]["Merk"]
-                        if not inputs.get("Ruangan"): inputs["Ruangan"] = peta_inv[ns_key]["Ruangan"]
-
-                st.session_state["w_signal_db"][selected_menu].append(inputs)
-                save_data(st.session_state["w_signal_db"])
-                st.success(f"Laporan {selected_menu} berhasil dikirim dan tercatat di Super Admin!")
-                st.rerun()
-
-        # TABEL RIWAYAT & GALERI FOTO
-        st.markdown("---")
-        st.markdown("### 📝 Tabel & Galeri Riwayat Laporan")
-        menu_data = data.get(selected_menu, [])
-        df_menu = pd.DataFrame(menu_data)
-
-        if not df_menu.empty:
-            df_display = df_menu.copy()
-            if "Foto" in df_display.columns:
-                df_display["Foto Status"] = df_display["Foto"].apply(lambda x: "🖼️ Ada Foto" if x else "Tidak Ada")
-                df_display = df_display.drop(columns=["Foto"])
-            
-            st.dataframe(df_display, use_container_width=True)
-
-            if "Foto" in df_menu.columns:
-                st.markdown("#### 🖼️ Galeri Foto Bukti Laporan:")
-                cols = st.columns(3)
-                idx_col = 0
-                for idx, row in df_menu.iterrows():
-                    if row.get("Foto"):
-                        with cols[idx_col % 3]:
-                            try:
-                                img_bytes = base64.b64decode(row["Foto"])
-                                teknisi_info = f"Teknisi: {row.get('Nama Teknisi', 'Umum')}"
-                                st.image(img_bytes, caption=f"{row.get('Nama Alat', 'Alat')} ({row.get('Nomor Seri', '')}) - {teknisi_info}", use_container_width=True)
-                            except Exception:
-                                pass
-                        idx_col += 1
+                        if not inputs.get("Ruangan"): inputs["Ruangan"] =
