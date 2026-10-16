@@ -21,8 +21,9 @@ def check_login():
             "GUEST": {"pass": "12345", "role": "User", "nama": "Teknisi / User Lapangan"}
         }
 
-        if user_input in CREDENTIALS and PASS_BENAR := CREDENTIALS[user_input]["pass"]:
-            if pass_input == PASS_BENAR:
+        if user_input in CREDENTIALS:
+            pass_benar = CREDENTIALS[user_input]["pass"]
+            if pass_input == pass_benar:
                 st.session_state["login_success"] = True
                 st.session_state["user_role"] = CREDENTIALS[user_input]["role"]
                 st.session_state["user_nama"] = CREDENTIALS[user_input]["nama"]
@@ -359,4 +360,86 @@ if check_login():
 
             elif role_aktif == "Admin":
                 if selected_menu == "Inventory Alkes":
-                    col1, col2, col3 = st
+                    col1, col2, col3 = st.columns(3)
+                    inputs["Nama Alat"] = col1.text_input("Nama Alat")
+                    inputs["Merk"] = col2.text_input("Merk")
+                    inputs["Type"] = col3.text_input("Type")
+                    
+                    col4, col5, col6 = st.columns(3)
+                    inputs["Nomor Seri"] = col4.text_input("Nomor Seri")
+                    inputs["Tahun Pengadaan"] = col5.text_input("Tahun Pengadaan")
+                    inputs["Harga Perolehan"] = col6.number_input("Harga Perolehan (Rp)", min_value=0.0, step=1000.0)
+                    
+                    col7 = st.columns(1)[0]
+                    inputs["Ruangan"] = col7.text_input("Ruangan")
+                    
+                    cond_col1, cond_col2, cond_col3 = st.columns(3)
+                    pilih_kondisi = cond_col1.radio("Pilih Kondisi:", ["Baik", "KB (Kurang Baik)", "RB (Rusak Berat)"], index=0)
+                    inputs["Kondisi Baik"] = "✓" if pilih_kondisi == "Baik" else ""
+                    inputs["Kondisi KB"] = "✓" if pilih_kondisi == "KB (Kurang Baik)" else ""
+                    inputs["Kondisi RB"] = "✓" if pilih_kondisi == "RB (Rusak Berat)" else ""
+
+            submit_button = st.form_submit_button(label="➕ Simpan Data")
+            if submit_button:
+                st.session_state["undo_history"].append(copy.deepcopy(st.session_state["w_signal_db"]))
+                
+                # Konversi foto ke base64 jika ada
+                if uploaded_photo is not None:
+                    bytes_data = uploaded_photo.read()
+                    encoded_img = base64.b64encode(bytes_data).decode('utf-8')
+                    inputs["Foto"] = encoded_img
+                else:
+                    inputs["Foto"] = ""
+
+                if selected_menu in ["Perbaikan", "Pemeliharaan"]:
+                    peta_inv = dapatkan_peta_inventory()
+                    ns_key = str(inputs.get("Nomor Seri", "")).strip().lower()
+                    if ns_key in peta_inv:
+                        inputs["Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
+                        inputs["Merk"] = peta_inv[ns_key]["Merk"]
+                        inputs["Type"] = peta_inv[ns_key]["Type"]
+                        inputs["Ruangan"] = peta_inv[ns_key]["Ruangan"]
+
+                st.session_state["w_signal_db"][selected_menu].append(inputs)
+                save_data(st.session_state["w_signal_db"])
+                st.success(f"Data {selected_menu} berhasil disimpan!")
+                st.rerun()
+
+        # 2. TAMPILKAN TABEL DATA & FOTO BUKTI
+        st.markdown("---")
+        st.markdown("### 📝 Tabel & Galeri Riwayat Data")
+        menu_data = data.get(selected_menu, [])
+        df_menu = pd.DataFrame(menu_data)
+
+        if not df_menu.empty:
+            df_display = df_menu.copy()
+            if "Foto" in df_display.columns:
+                df_display["Foto Status"] = df_display["Foto"].apply(lambda x: "🖼️ Ada Foto" if x else "Tidak Ada")
+                df_display = df_display.drop(columns=["Foto"])
+            
+            st.dataframe(df_display, use_container_width=True)
+
+            if "Foto" in df_menu.columns:
+                st.markdown("#### 🖼️ Foto Bukti Kegiatan:")
+                cols = st.columns(3)
+                idx_col = 0
+                for idx, row in df_menu.iterrows():
+                    if row.get("Foto"):
+                        with cols[idx_col % 3]:
+                            try:
+                                img_bytes = base64.b64decode(row["Foto"])
+                                st.image(img_bytes, caption=f"{row.get('Nama Alat', 'Alat')} ({row.get('Nomor Seri', '')}) - {row.get('Tanggal Perbaikan', row.get('Tanggal Pemeliharaan', ''))}", use_container_width=True)
+                            except Exception:
+                                pass
+                        idx_col += 1
+
+    if search_ns:
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🔍 Hasil Pencarian Alat:")
+        peta = dapatkan_peta_inventory()
+        ns_clean = search_ns.strip().lower()
+        if ns_clean in peta:
+            info = peta[ns_clean]
+            st.sidebar.success(f"**Alat Ditemukan!**\n\n* **Nama:** {info['Nama Alat']}\n* **Merk:** {info['Merk']}\n* **Type:** {info['Type']}\n* **Ruangan:** {info['Ruangan']}")
+        else:
+            st.sidebar.warning("Nomor Seri belum terdaftar di Inventory Alkes.")
