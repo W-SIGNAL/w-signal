@@ -17,8 +17,8 @@ def check_login():
 
         # Data Kredensial Account
         CREDENTIALS = {
-            "NAY": {"pass": "lalanana", "role": "Admin", "nama": "NAY (Administrator)"},
-            "GUEST": {"pass": "12345", "role": "User", "nama": "Teknisi / User Lapangan"}
+            "NAY": {"pass": "lalanana", "role": "Admin", "nama": "NAY (Super Administrator)"},
+            "GUEST": {"pass": "12345", "role": "User", "nama": "Teknisi Lapangan"}
         }
 
         if user_input in CREDENTIALS:
@@ -45,7 +45,7 @@ def check_login():
             st.text_input("Password:", type="password", key="password_input")
             st.button("Masuk / Login", on_click=login_entered, use_container_width=True)
             
-            st.info("💡 **Akses User / Teknisi Publik:**\n* **Username:** `GUEST` | **Password:** `12345` (Hanya Input Perbaikan, Pemeliharaan & Foto)")
+            st.info("💡 **Akses Teknisi / Publik:**\n* **Username:** `GUEST` | **Password:** `12345` (Input Perbaikan & Pemeliharaan)")
             
             if st.session_state.get("login_success") == False:
                 st.error("😕 Username atau Password salah. Silakan coba lagi.")
@@ -84,11 +84,11 @@ if check_login():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
     DB_FILE = os.path.join(BASE_DIR, "database_w_signal.json")
 
-    # --- STRUKTUR KOLOM DEFAULT ---
+    # --- STRUKTUR KOLOM DEFAULT (Ditambahkan 'Nama Teknisi') ---
     KOLOM_DEFAULT = {
         "Inventory Alkes": ["Nama Alat", "Merk", "Type", "Nomor Seri", "Tahun Pengadaan", "Harga Perolehan", "Kondisi Baik", "Kondisi KB", "Kondisi RB", "Ruangan"],
-        "Perbaikan": ["Tanggal Perbaikan", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Foto", "Note"],
-        "Pemeliharaan": ["Nama Alat", "Merk", "Type", "Nomor Seri", "Ruangan", "Tanggal Pemeliharaan", "Keterangan", "Foto", "Note"],
+        "Perbaikan": ["Tanggal Perbaikan", "Nama Teknisi", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Foto", "Note"],
+        "Pemeliharaan": ["Nama Alat", "Nama Teknisi", "Merk", "Type", "Nomor Seri", "Ruangan", "Tanggal Pemeliharaan", "Keterangan", "Foto", "Note"],
         "Stok Suku Cadang": ["Nama Suku Cadang", "Spesifikasi", "Jumlah Stok", "Satuan", "In", "Out", "Keterangan"],
         "Perencanaan RAB (Usulan)": ["Sub Kegiatan", "Nama Kegiatan", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan", "Keterangan"],
         "Surat Masuk (Nota Dinas)": ["Tanggal Terima Surat", "Tanggal Surat", "Nomor Surat", "Perihal", "Asal Surat", "Keterangan"],
@@ -290,7 +290,6 @@ if check_login():
     st.sidebar.markdown("---")
     st.sidebar.header("Pilih Menu:")
 
-    # HAK AKSES MENU SESUAI ROLE LOGIN
     if role_aktif == "Admin":
         menu_pilihan = [
             "Inventory Alkes", "Perbaikan", "Pemeliharaan", "Stok Suku Cadang",
@@ -298,12 +297,21 @@ if check_login():
             "Kalibrasi", "Lihat Semua Data & Ringkasan", "Manajemen SOP Alkes"
         ]
     else:
-        # ROLE USER / TEKNISI HANYA BISA ACCESS INPUT PERBAIKAN & PEMELIHARAAN
         menu_pilihan = ["Perbaikan", "Pemeliharaan"]
 
     selected_menu = st.sidebar.radio("Navigasi Menu", menu_pilihan, label_visibility="collapsed")
 
-    # --- 8. LOGIKA HALAMAN UTAMA ---
+    # --- 8. LOGIKA HALAMAN UTAMA & NOTIFIKASI SUPER ADMIN ---
+    if role_aktif == "Admin":
+        # HITUNG TOTAL LAPORAN BARU UNTUK NOTIFIKASI
+        total_perbaikan_notif = len(data.get('Perbaikan', []))
+        total_pemeliharaan_notif = len(data.get('Pemeliharaan', []))
+        
+        # Tampilkan Kotak Notifikasi di Dashboard Super Admin
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🔔 Pusat Notifikasi Admin")
+        st.sidebar.info(f"📢 Total Laporan Masuk:\n* **Perbaikan:** {total_perbaikan_notif} Laporan\n* **Pemeliharaan:** {total_pemeliharaan_notif} Kegiatan")
+
     if selected_menu == "Lihat Semua Data & Ringkasan" and role_aktif == "Admin":
         st.header("📋 Ringkasan Analisis Data W-SIGNAL")
         inv_list_data = data.get('Inventory Alkes', [])
@@ -336,14 +344,15 @@ if check_login():
     else:
         st.header(f"📋 Menu: {selected_menu}")
         
-        # 1. FORM INPUT MANUAL & UPLOAD FOTO
-        st.markdown("### 📥 Tambah Data Baru")
+        # 1. FORM INPUT MANUAL DENGAN NAMA TEKNISI & UPLOAD FOTO
+        st.markdown("### 📥 Tambah Data Baru (Laporan Lapangan)")
         with st.form(key=f"form_{selected_menu.lower().replace(' ', '_')}", clear_on_submit=True):
             inputs = {}
             uploaded_photo = None
 
             if selected_menu == "Perbaikan":
                 inputs["Tanggal Perbaikan"] = st.date_input("Tanggal Perbaikan").strftime('%Y-%m-%d')
+                inputs["Nama Teknisi"] = st.text_input("Nama Teknisi (Yang Melaporkan)")
                 inputs["Nomor Seri"] = st.text_input("Nomor Seri")
                 inputs["Kerusakan"] = st.text_area("Kerusakan")
                 inputs["Tindakan"] = st.text_area("Tindakan")
@@ -352,6 +361,8 @@ if check_login():
                 inputs["Note"] = ""
 
             elif selected_menu == "Pemeliharaan":
+                inputs["Nama Alat"] = st.text_input("Nama Alat")
+                inputs["Nama Teknisi"] = st.text_input("Nama Teknisi (Yang Melaporkan)")
                 inputs["Nomor Seri"] = st.text_input("Nomor Seri")
                 inputs["Tanggal Pemeliharaan"] = st.date_input("Tanggal Pemeliharaan").strftime('%Y-%m-%d')
                 inputs["Keterangan"] = st.text_area("Keterangan")
@@ -379,11 +390,10 @@ if check_login():
                     inputs["Kondisi KB"] = "✓" if pilih_kondisi == "KB (Kurang Baik)" else ""
                     inputs["Kondisi RB"] = "✓" if pilih_kondisi == "RB (Rusak Berat)" else ""
 
-            submit_button = st.form_submit_button(label="➕ Simpan Data")
+            submit_button = st.form_submit_button(label="➕ Kirim Laporan")
             if submit_button:
                 st.session_state["undo_history"].append(copy.deepcopy(st.session_state["w_signal_db"]))
                 
-                # Konversi foto ke base64 jika ada
                 if uploaded_photo is not None:
                     bytes_data = uploaded_photo.read()
                     encoded_img = base64.b64encode(bytes_data).decode('utf-8')
@@ -402,12 +412,12 @@ if check_login():
 
                 st.session_state["w_signal_db"][selected_menu].append(inputs)
                 save_data(st.session_state["w_signal_db"])
-                st.success(f"Data {selected_menu} berhasil disimpan!")
+                st.success(f"Laporan {selected_menu} berhasil dikirim dan tercatat di sistem Super Admin!")
                 st.rerun()
 
         # 2. TAMPILKAN TABEL DATA & FOTO BUKTI
         st.markdown("---")
-        st.markdown("### 📝 Tabel & Galeri Riwayat Data")
+        st.markdown("### 📝 Tabel & Galeri Riwayat Laporan")
         menu_data = data.get(selected_menu, [])
         df_menu = pd.DataFrame(menu_data)
 
@@ -420,7 +430,7 @@ if check_login():
             st.dataframe(df_display, use_container_width=True)
 
             if "Foto" in df_menu.columns:
-                st.markdown("#### 🖼️ Foto Bukti Kegiatan:")
+                st.markdown("#### 🖼️ Galeri Foto Bukti Laporan:")
                 cols = st.columns(3)
                 idx_col = 0
                 for idx, row in df_menu.iterrows():
@@ -428,7 +438,8 @@ if check_login():
                         with cols[idx_col % 3]:
                             try:
                                 img_bytes = base64.b64decode(row["Foto"])
-                                st.image(img_bytes, caption=f"{row.get('Nama Alat', 'Alat')} ({row.get('Nomor Seri', '')}) - {row.get('Tanggal Perbaikan', row.get('Tanggal Pemeliharaan', ''))}", use_container_width=True)
+                                teknisi_info = f"Teknisi: {row.get('Nama Teknisi', 'Umum')}"
+                                st.image(img_bytes, caption=f"{row.get('Nama Alat', 'Alat')} ({row.get('Nomor Seri', '')}) - {teknisi_info}", use_container_width=True)
                             except Exception:
                                 pass
                         idx_col += 1
