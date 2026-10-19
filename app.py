@@ -89,7 +89,7 @@ def save_sheet_data(worksheet_name, new_data_dict):
 
 
 # ==========================================
-# 3. FUNGSI EKSPOR KE EXCEL (.XLSX)
+# 3. FUNGSI EKSPOR & TEMPLATE EXCEL (.XLSX)
 # ==========================================
 def convert_df_to_excel(df, sheet_name="Data_Rekap"):
   output = io.BytesIO()
@@ -114,6 +114,31 @@ def render_excel_download_button(df, filename_prefix="Rekap_Data"):
     st.info("Belum ada data untuk diunduh.")
 
 
+def render_template_download_button(sheet_name):
+  columns = [
+      "Tanggal",
+      "Nama Teknisi",
+      "Nama Alat",
+      "Merk",
+      "Nomor Seri",
+      "Ruangan",
+      "Keterangan",
+  ]
+  df_template = pd.DataFrame(columns=columns)
+  template_bytes = convert_df_to_excel(
+      df_template, sheet_name=sheet_name[:30]
+  )
+  st.download_button(
+      label=f"📄 Unduh Template Excel ({sheet_name})",
+      data=template_bytes,
+      file_name=f"Template_{sheet_name.replace(' ', '_')}.xlsx",
+      mime=(
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      ),
+      use_container_width=True,
+  )
+
+
 # ==========================================
 # 4. MANAJEMEN AUTENTIKASI & HALAMAN LOGIN
 # ==========================================
@@ -131,20 +156,22 @@ if not st.session_state["logged_in"]:
     with st.form("login_form"):
       username_input = st.text_input("Username")
       password_input = st.text_input("Password", type="password")
-      submit_login = st.form_submit_button("Masuk / Login", use_container_width=True)
+      submit_login = st.form_submit_button(
+          "Masuk / Login", use_container_width=True
+      )
 
       if submit_login:
         if username_input == "NAY" and password_input == "lalanana":
           st.session_state["logged_in"] = True
           st.session_state["user_role"] = "NAY"
-          st.session_state["username"] = "NAY (Super Administrator)"
-          st.success("Login Berhasil!")
+          st.session_state["username"] = "NAY"
+          st.success("Login Berhasil sebagai Super Admin!")
           st.rerun()
         elif username_input == "GUEST" and password_input == "12345":
           st.session_state["logged_in"] = True
           st.session_state["user_role"] = "GUEST"
-          st.session_state["username"] = "GUEST (Teknisi Lapangan)"
-          st.success("Login Berhasil!")
+          st.session_state["username"] = "GUEST"
+          st.success("Login Berhasil sebagai Teknisi!")
           st.rerun()
         else:
           st.error("Username atau Password salah!")
@@ -159,7 +186,7 @@ if not st.session_state["logged_in"]:
 # 5. DASHBOARD UTAMA & HAK AKSES MENU
 # ==========================================
 st.sidebar.title("📟 KONTROL DATA")
-st.sidebar.markdown(f"**Status:** {st.session_state['username']}")
+st.sidebar.markdown(f"**Status Login:** {st.session_state['username']}")
 if st.sidebar.button("Logout / Keluar", use_container_width=True):
   st.session_state["logged_in"] = False
   st.session_state["user_role"] = ""
@@ -168,7 +195,6 @@ if st.sidebar.button("Logout / Keluar", use_container_width=True):
 
 st.sidebar.markdown("---")
 
-# Menentukan menu berdasarkan role pengguna
 if st.session_state["user_role"] == "NAY":
   menu_options = [
       "Inventory Alkes",
@@ -194,13 +220,27 @@ st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
 if selected_menu != "Lihat Semua Data & Ringkasan":
   st.header(f"📝 Input Data: {selected_menu}")
 
+  # Fitur Download Template untuk Super Admin (NAY)
+  if st.session_state["user_role"] == "NAY":
+    with st.expander("📥 Unduh Template Spreadsheet"):
+      render_template_download_button(selected_menu)
+
+  # Menentukan nilai default Nama Teknisi agar tidak muncul "GUEST (Teknisi Lapangan)"
+  default_teknisi_val = (
+      ""
+      if st.session_state["user_role"] == "GUEST"
+      else st.session_state["username"]
+  )
+
   with st.form(key=f"form_{selected_menu}", clear_on_submit=True):
     col1, col2 = st.columns(2)
 
     with col1:
       tanggal = st.date_input("Tanggal").strftime("%Y-%m-%d")
       teknisi = st.text_input(
-          "Nama Teknisi", value=st.session_state["username"]
+          "Nama Teknisi",
+          value=default_teknisi_val,
+          placeholder="Ketik Nama Anda...",
       )
       nama_alat = st.text_input("Nama Alat")
       merk = st.text_input("Merk")
@@ -210,6 +250,16 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
       ruangan = st.text_input("Ruangan / Lokasi")
       keterangan = st.text_area("Keterangan / Catatan")
 
+    # Upload File Khusus Super Admin (NAY)
+    uploaded_file_name = ""
+    if st.session_state["user_role"] == "NAY":
+      uploaded_file = st.file_uploader(
+          "Upload File / Lampiran (PDF, Image, XLSX)",
+          type=["pdf", "png", "jpg", "jpeg", "xlsx"],
+      )
+      if uploaded_file is not None:
+        uploaded_file_name = uploaded_file.name
+
     submitted = st.form_submit_button(
         f"Simpan Data {selected_menu}", use_container_width=True
     )
@@ -217,6 +267,8 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
     if submitted:
       if not nama_alat:
         st.warning("Mohon isi minimal Nama Alat!")
+      elif not teknisi:
+        st.warning("Mohon isi Nama Teknisi!")
       else:
         new_row = {
             "Tanggal": tanggal,
@@ -227,6 +279,9 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
             "Ruangan": ruangan,
             "Keterangan": keterangan,
         }
+        if st.session_state["user_role"] == "NAY" and uploaded_file_name:
+          new_row["Lampiran"] = uploaded_file_name
+
         with st.spinner("Menyimpan data ke Cloud Google Sheets..."):
           if save_sheet_data(selected_menu, new_row):
             st.success(
@@ -269,7 +324,12 @@ else:
       st.subheader(f"Rekapitulasi {sheet_name}")
       df_tab = load_sheet_data(sheet_name)
 
-      render_excel_download_button(
-          df_tab, filename_prefix=f"Rekap_{sheet_name.replace(' ', '_')}"
-      )
+      col_d1, col_d2 = st.columns(2)
+      with col_d1:
+        render_excel_download_button(
+            df_tab, filename_prefix=f"Rekap_{sheet_name.replace(' ', '_')}"
+        )
+      with col_d2:
+        render_template_download_button(sheet_name)
+
       st.dataframe(df_tab, use_container_width=True)
