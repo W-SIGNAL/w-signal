@@ -52,25 +52,38 @@ def get_gspread_client():
   return gspread.authorize(creds)
 
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=5)
 def load_sheet_data(worksheet_name):
-  """Membaca data dari Google Sheets dengan penanganan struktur header ganda."""
+  """Membaca seluruh isi baris & kolom Google Sheet tanpa batasan nama header."""
   try:
     gc = get_gspread_client()
     sh = gc.open("W-SIGNAL_Database")
-    worksheet = sh.worksheet(worksheet_name)
-    data = worksheet.get_all_values()
+
+    # Cari worksheet secara akurat
+    target_ws = None
+    for ws in sh.worksheets():
+      if ws.title.strip().lower() == worksheet_name.strip().lower():
+        target_ws = ws
+        break
+
+    if target_ws is None:
+      return pd.DataFrame()
+
+    data = target_ws.get_all_values()
     if not data or len(data) <= 1:
       return pd.DataFrame()
 
-    headers = data[0]
+    headers = [str(h).strip() for h in data[0]]
     rows = data[1:]
 
-    # Jika baris pertama data sama persis dengan header (duplikat header), abaikan
-    if rows and rows[0] == headers:
+    # Abaikan jika ada duplikasi baris header di baris ke-2
+    if rows and [str(r).strip() for r in rows[0]] == headers:
       rows = rows[1:]
 
-    return pd.DataFrame(rows, columns=headers)
+    df = pd.DataFrame(rows, columns=headers)
+    # Hapus baris yang sepenuhnya kosong
+    df = df.replace("", None).dropna(how="all").fillna("")
+    return df
   except Exception as e:
     return pd.DataFrame()
 
@@ -85,9 +98,9 @@ def save_sheet_data(worksheet_name, new_data_dict):
       worksheet = sh.add_worksheet(title=worksheet_name, rows="100", cols="20")
 
     headers = list(new_data_dict.keys())
-    existing_records = worksheet.get_all_records()
+    existing_data = worksheet.get_all_values()
 
-    if not existing_records:
+    if not existing_data:
       worksheet.append_row(headers)
 
     row_to_append = [str(new_data_dict.get(h, "")) for h in headers]
