@@ -52,14 +52,25 @@ def get_gspread_client():
   return gspread.authorize(creds)
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10)
 def load_sheet_data(worksheet_name):
+  """Membaca data dari Google Sheets dengan penanganan struktur header ganda."""
   try:
     gc = get_gspread_client()
     sh = gc.open("W-SIGNAL_Database")
     worksheet = sh.worksheet(worksheet_name)
-    data = worksheet.get_all_records()
-    return pd.DataFrame(data)
+    data = worksheet.get_all_values()
+    if not data or len(data) <= 1:
+      return pd.DataFrame()
+
+    headers = data[0]
+    rows = data[1:]
+
+    # Jika baris pertama data sama persis dengan header (duplikat header), abaikan
+    if rows and rows[0] == headers:
+      rows = rows[1:]
+
+    return pd.DataFrame(rows, columns=headers)
   except Exception as e:
     return pd.DataFrame()
 
@@ -225,12 +236,7 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
     with st.expander("📥 Unduh Template Spreadsheet"):
       render_template_download_button(selected_menu)
 
-  # Menentukan nilai default Nama Teknisi agar tidak muncul "GUEST (Teknisi Lapangan)"
-  default_teknisi_val = (
-      ""
-      if st.session_state["user_role"] == "GUEST"
-      else st.session_state["username"]
-  )
+  default_teknisi_val = "" if st.session_state["user_role"] == "GUEST" else ""
 
   with st.form(key=f"form_{selected_menu}", clear_on_submit=True):
     col1, col2 = st.columns(2)
@@ -250,7 +256,6 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
       ruangan = st.text_input("Ruangan / Lokasi")
       keterangan = st.text_area("Keterangan / Catatan")
 
-    # Upload File Khusus Super Admin (NAY)
     uploaded_file_name = ""
     if st.session_state["user_role"] == "NAY":
       uploaded_file = st.file_uploader(
