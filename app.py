@@ -54,12 +54,11 @@ def get_gspread_client():
 
 @st.cache_data(ttl=5)
 def load_sheet_data(worksheet_name):
-  """Membaca seluruh isi baris & kolom Google Sheet tanpa batasan nama header."""
+  """Membaca seluruh data lama secara fleksibel dari Google Sheets."""
   try:
     gc = get_gspread_client()
     sh = gc.open("W-SIGNAL_Database")
 
-    # Cari worksheet secara akurat
     target_ws = None
     for ws in sh.worksheets():
       if ws.title.strip().lower() == worksheet_name.strip().lower():
@@ -70,18 +69,26 @@ def load_sheet_data(worksheet_name):
       return pd.DataFrame()
 
     data = target_ws.get_all_values()
-    if not data or len(data) <= 1:
+    if not data or len(data) == 0:
       return pd.DataFrame()
 
-    headers = [str(h).strip() for h in data[0]]
-    rows = data[1:]
+    # Cari baris yang memuat header utama
+    header_idx = 0
+    for idx, row in enumerate(data[:5]):
+      cleaned_row = [str(cell).strip() for cell in row]
+      if any(
+          k in cleaned_row
+          for k in ["Nama Alat", "Merk", "Tanggal", "Nomor Seri"]
+      ):
+        header_idx = idx
+        break
 
-    # Abaikan jika ada duplikasi baris header di baris ke-2
-    if rows and [str(r).strip() for r in rows[0]] == headers:
-      rows = rows[1:]
+    headers = [str(h).strip() for h in data[header_idx]]
+    rows = data[header_idx + 1 :]
 
+    # Buat DataFrame
     df = pd.DataFrame(rows, columns=headers)
-    # Hapus baris yang sepenuhnya kosong
+    # Filter baris yang sepenuhnya kosong
     df = df.replace("", None).dropna(how="all").fillna("")
     return df
   except Exception as e:
@@ -89,22 +96,43 @@ def load_sheet_data(worksheet_name):
 
 
 def save_sheet_data(worksheet_name, new_data_dict):
+  """Menyimpan input baru ke Google Sheets."""
   try:
     gc = get_gspread_client()
     sh = gc.open("W-SIGNAL_Database")
-    try:
-      worksheet = sh.worksheet(worksheet_name)
-    except gspread.exceptions.WorksheetNotFound:
-      worksheet = sh.add_worksheet(title=worksheet_name, rows="100", cols="20")
 
-    headers = list(new_data_dict.keys())
-    existing_data = worksheet.get_all_values()
+    target_ws = None
+    for ws in sh.worksheets():
+      if ws.title.strip().lower() == worksheet_name.strip().lower():
+        target_ws = ws
+        break
+
+    if target_ws is None:
+      target_ws = sh.add_worksheet(
+          title=worksheet_name, rows="500", cols="20"
+      )
+
+    existing_data = target_ws.get_all_values()
 
     if not existing_data:
-      worksheet.append_row(headers)
+      headers = list(new_data_dict.keys())
+      target_ws.append_row(headers)
+      existing_headers = headers
+    else:
+      existing_headers = [str(h).strip() for h in existing_data[0]]
 
-    row_to_append = [str(new_data_dict.get(h, "")) for h in headers]
-    worksheet.append_row(row_to_append)
+    # Salin data sesuai kolom
+    row_to_append = []
+    for h in existing_headers:
+      row_to_append.append(str(new_data_dict.get(h, "")))
+
+    # Masukkan sisa kunci yang belum terdaftar di header
+    for k, v in new_data_dict.items():
+      if k not in existing_headers:
+        existing_headers.append(k)
+        row_to_append.append(str(v))
+
+    target_ws.append_row(row_to_append)
     st.cache_data.clear()
     return True
   except Exception as e:
@@ -249,17 +277,13 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
     with st.expander("📥 Unduh Template Spreadsheet"):
       render_template_download_button(selected_menu)
 
-  default_teknisi_val = "" if st.session_state["user_role"] == "GUEST" else ""
-
   with st.form(key=f"form_{selected_menu}", clear_on_submit=True):
     col1, col2 = st.columns(2)
 
     with col1:
       tanggal = st.date_input("Tanggal").strftime("%Y-%m-%d")
       teknisi = st.text_input(
-          "Nama Teknisi",
-          value=default_teknisi_val,
-          placeholder="Ketik Nama Anda...",
+          "Nama Teknisi", value="", placeholder="Ketik Nama Teknisi..."
       )
       nama_alat = st.text_input("Nama Alat")
       merk = st.text_input("Merk")
@@ -269,14 +293,11 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
       ruangan = st.text_input("Ruangan / Lokasi")
       keterangan = st.text_area("Keterangan / Catatan")
 
-    uploaded_file_name = ""
-    if st.session_state["user_role"] == "NAY":
-      uploaded_file = st.file_uploader(
-          "Upload File / Lampiran (PDF, Image, XLSX)",
-          type=["pdf", "png", "jpg", "jpeg", "xlsx"],
-      )
-      if uploaded_file is not None:
-        uploaded_file_name = uploaded_file.name
+    # Fitur Upload Foto/Lampiran untuk SEMUA ROLE (Termasuk Teknisi GUEST)
+    uploaded_file = st.file_uploader(
+        "Upload Foto / Lampiran (PDF, PNG, JPG, XLSX)",
+        type=["pdf", "png", "jpg", "jpeg", "xlsx"],
+    )
 
     submitted = st.form_submit_button(
         f"Simpan Data {selected_menu}", use_container_width=True
@@ -297,13 +318,15 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
             "Ruangan": ruangan,
             "Keterangan": keterangan,
         }
-        if st.session_state["user_role"] == "NAY" and uploaded_file_name:
-          new_row["Lampiran"] = uploaded_file_name
+
+        if uploaded_file is not None:
+          new_row["Foto / Lampiran"] = uploaded_file.name
 
         with st.spinner("Menyimpan data ke Cloud Google Sheets..."):
           if save_sheet_data(selected_menu, new_row):
             st.success(
-                f"Data {selected_menu} berhasil disimpan ke Google Sheets!"
+                f"Data {selected_menu} berhasil disimpan dan tersinkronisasi ke"
+                " Super Admin!"
             )
 
   st.markdown("---")
@@ -316,7 +339,7 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
   st.dataframe(df_current, use_container_width=True)
 
 # ==========================================
-# 7. RINGKASAN & REKAPITULASI (Hanya Admin)
+# 7. RINGKASAN & REKAPITULASI (Hanya Super Admin)
 # ==========================================
 else:
   st.header("📊 Ringkasan Analisis Data W-SIGNAL")
