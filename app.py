@@ -43,7 +43,9 @@ def get_gspread_client():
   if "gcp_service_account" in st.secrets:
     secret_dict = dict(st.secrets["gcp_service_account"])
   else:
-    st.error("Secrets '[gcp_service_account]' tidak ditemukan di Streamlit Cloud!")
+    st.error(
+        "Secrets '[gcp_service_account]' tidak ditemukan di Streamlit Cloud!"
+    )
     st.stop()
 
   creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
@@ -117,8 +119,8 @@ def render_excel_download_button(df, filename_prefix="Rekap_Data"):
 # ==========================================
 if "logged_in" not in st.session_state:
   st.session_state["logged_in"] = False
-  st.session_state["user_role"] = "GUEST"
-  st.session_state["username"] = "Teknisi Lapangan"
+  st.session_state["user_role"] = ""
+  st.session_state["username"] = ""
 
 st.sidebar.title("📟 KONTROL DATA")
 
@@ -128,26 +130,33 @@ if not st.session_state["logged_in"]:
   password_input = st.sidebar.text_input("Password", type="password")
 
   if st.sidebar.button("Login", use_container_width=True):
-    if username_input == "NAY" and password_input == "admin123":
+    if username_input == "NAY" and password_input == "lalanana":
       st.session_state["logged_in"] = True
       st.session_state["user_role"] = "NAY"
       st.session_state["username"] = "NAY (Super Administrator)"
-      st.sidebar.success("Login berhasil!")
+      st.sidebar.success("Login Berhasil!")
       st.rerun()
-    elif username_input == "GUEST" and password_input == "guest123":
+    elif username_input == "GUEST" and password_input == "12345":
       st.session_state["logged_in"] = True
       st.session_state["user_role"] = "GUEST"
       st.session_state["username"] = "GUEST (Teknisi Lapangan)"
-      st.sidebar.success("Login berhasil!")
+      st.sidebar.success("Login Berhasil!")
       st.rerun()
     else:
       st.sidebar.error("Username atau Password salah!")
-else:
-  st.sidebar.markdown(f"**Status:** {st.session_state['username']}")
-  if st.sidebar.button("Logout / Keluar", use_container_width=True):
-    st.session_state["logged_in"] = False
-    st.session_state["user_role"] = "GUEST"
-    st.rerun()
+
+  # Tampilan Halaman Utama Sebelum Login
+  st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
+  st.warning("🔒 Silakan Login melalui menu di sebelah kiri untuk mengakses aplikasi.")
+  st.stop()  # Menghentikan eksekusi kode di bawah jika belum login
+
+# Jika Sudah Login
+st.sidebar.markdown(f"**Status:** {st.session_state['username']}")
+if st.sidebar.button("Logout / Keluar", use_container_width=True):
+  st.session_state["logged_in"] = False
+  st.session_state["user_role"] = ""
+  st.session_state["username"] = ""
+  st.rerun()
 
 st.sidebar.markdown("---")
 
@@ -181,7 +190,9 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
 
     with col1:
       tanggal = st.date_input("Tanggal").strftime("%Y-%m-%d")
-      teknisi = st.text_input("Nama Teknisi", value=st.session_state["username"])
+      teknisi = st.text_input(
+          "Nama Teknisi", value=st.session_state["username"]
+      )
       nama_alat = st.text_input("Nama Alat")
       merk = st.text_input("Merk")
 
