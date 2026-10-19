@@ -72,7 +72,6 @@ def load_sheet_data(worksheet_name):
     if not data or len(data) == 0:
       return pd.DataFrame()
 
-    # Cari baris yang memuat header utama
     header_idx = 0
     for idx, row in enumerate(data[:5]):
       cleaned_row = [str(cell).strip() for cell in row]
@@ -86,9 +85,7 @@ def load_sheet_data(worksheet_name):
     headers = [str(h).strip() for h in data[header_idx]]
     rows = data[header_idx + 1 :]
 
-    # Buat DataFrame
     df = pd.DataFrame(rows, columns=headers)
-    # Filter baris yang sepenuhnya kosong
     df = df.replace("", None).dropna(how="all").fillna("")
     return df
   except Exception as e:
@@ -96,7 +93,6 @@ def load_sheet_data(worksheet_name):
 
 
 def save_sheet_data(worksheet_name, new_data_dict):
-  """Menyimpan input baru ke Google Sheets."""
   try:
     gc = get_gspread_client()
     sh = gc.open("W-SIGNAL_Database")
@@ -121,12 +117,10 @@ def save_sheet_data(worksheet_name, new_data_dict):
     else:
       existing_headers = [str(h).strip() for h in existing_data[0]]
 
-    # Salin data sesuai kolom
     row_to_append = []
     for h in existing_headers:
       row_to_append.append(str(new_data_dict.get(h, "")))
 
-    # Masukkan sisa kunci yang belum terdaftar di header
     for k, v in new_data_dict.items():
       if k not in existing_headers:
         existing_headers.append(k)
@@ -154,7 +148,7 @@ def render_excel_download_button(df, filename_prefix="Rekap_Data"):
   if not df.empty:
     excel_data = convert_df_to_excel(df, sheet_name=filename_prefix[:30])
     st.download_button(
-        label=f"📥 Unduh {filename_prefix} (.xlsx)",
+        label=f"📥 Download Seluruh Data {filename_prefix} (.xlsx)",
         data=excel_data,
         file_name=f"{filename_prefix}.xlsx",
         mime=(
@@ -168,20 +162,23 @@ def render_excel_download_button(df, filename_prefix="Rekap_Data"):
 
 def render_template_download_button(sheet_name):
   columns = [
-      "Tanggal",
-      "Nama Teknisi",
       "Nama Alat",
       "Merk",
+      "Type",
       "Nomor Seri",
+      "Tahun Pengadaan",
+      "Harga Perolehan",
+      "Kondisi Baik",
+      "Kondisi KB",
+      "Kondisi RB",
       "Ruangan",
-      "Keterangan",
   ]
   df_template = pd.DataFrame(columns=columns)
   template_bytes = convert_df_to_excel(
       df_template, sheet_name=sheet_name[:30]
   )
   st.download_button(
-      label=f"📄 Unduh Template Excel ({sheet_name})",
+      label=f"📄 Download Template Excel ({sheet_name})",
       data=template_bytes,
       file_name=f"Template_{sheet_name.replace(' ', '_')}.xlsx",
       mime=(
@@ -235,9 +232,9 @@ if not st.session_state["logged_in"]:
   st.stop()
 
 # ==========================================
-# 5. DASHBOARD UTAMA & HAK AKSES MENU
+# 5. SIDEBAR & MENU UTAMA
 # ==========================================
-st.sidebar.title("📟 KONTROL DATA")
+st.sidebar.markdown("### 🗂 KONTROL DATA")
 st.sidebar.markdown(f"**Status Login:** {st.session_state['username']}")
 if st.sidebar.button("Logout / Keluar", use_container_width=True):
   st.session_state["logged_in"] = False
@@ -246,6 +243,13 @@ if st.sidebar.button("Logout / Keluar", use_container_width=True):
   st.rerun()
 
 st.sidebar.markdown("---")
+st.sidebar.markdown("### 🔍 SCAN / CARI ALAT")
+search_barcode = st.sidebar.text_input(
+    "Arahkan kursor & Scan Barcode:", placeholder="Ketik/Scan No. Seri..."
+)
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Pilih Menu:")
 
 if st.session_state["user_role"] == "NAY":
   menu_options = [
@@ -258,88 +262,108 @@ if st.session_state["user_role"] == "NAY":
       "Rekap SR Vendor",
       "Kalibrasi",
       "Lihat Semua Data & Ringkasan",
+      "Manajemen SOP Alkes",
   ]
-else:  # Untuk GUEST / Teknisi
+else:
   menu_options = ["Perbaikan", "Pemeliharaan"]
 
-selected_menu = st.sidebar.radio("Pilih Menu:", menu_options)
+selected_menu = st.sidebar.radio("", menu_options, label_visibility="collapsed")
 
+# ==========================================
+# 6. TAMPILAN UTAMA & FITUR SESUAI GAMBAR LAMA
+# ==========================================
 st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
 
-# ==========================================
-# 6. FORM INPUT & TABEL DATA
-# ==========================================
 if selected_menu != "Lihat Semua Data & Ringkasan":
-  st.header(f"📝 Input Data: {selected_menu}")
 
-  # Fitur Download Template untuk Super Admin (NAY)
+  # Tombol Aksi Lipat (Expander) seperti pada tampilan lama
   if st.session_state["user_role"] == "NAY":
-    with st.expander("📥 Unduh Template Spreadsheet"):
+    with st.expander("➕ Tambah Data Manual"):
+      with st.form(key=f"form_{selected_menu}", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+          nama_alat = st.text_input("Nama Alat")
+          merk = st.text_input("Merk")
+          type_alat = st.text_input("Type")
+          nomor_seri = st.text_input("Nomor Seri / SN")
+          tahun_pengadaan = st.text_input("Tahun Pengadaan")
+        with col2:
+          harga_perolehan = st.text_input("Harga Perolehan")
+          kondisi = st.selectbox(
+              "Kondisi", ["Kondisi Baik", "Kondisi KB", "Kondisi RB"]
+          )
+          ruangan = st.text_input("Ruangan / Lokasi")
+          keterangan = st.text_area("Keterangan / Catatan")
+
+        uploaded_file = st.file_uploader(
+            "Upload Foto / Lampiran (PDF, PNG, JPG, XLSX)",
+            type=["pdf", "png", "jpg", "jpeg", "xlsx"],
+        )
+
+        submitted = st.form_submit_button(
+            f"Simpan Data {selected_menu}", use_container_width=True
+        )
+
+        if submitted:
+          if not nama_alat:
+            st.warning("Mohon isi minimal Nama Alat!")
+          else:
+            new_row = {
+                "Nama Alat": nama_alat,
+                "Merk": merk,
+                "Type": type_alat,
+                "Nomor Seri": nomor_seri,
+                "Tahun Pengadaan": tahun_pengadaan,
+                "Harga Perolehan": harga_perolehan,
+                kondisi: "✓",
+                "Ruangan": ruangan,
+                "Keterangan": keterangan,
+            }
+            if uploaded_file is not None:
+              new_row["Lampiran"] = uploaded_file.name
+
+            with st.spinner("Menyimpan data ke Google Sheets..."):
+              if save_sheet_data(selected_menu, new_row):
+                st.success("Data berhasil disimpan!")
+
+    with st.expander(f"📁 Mass Upload & Download Template ({selected_menu})"):
       render_template_download_button(selected_menu)
-
-  with st.form(key=f"form_{selected_menu}", clear_on_submit=True):
-    col1, col2 = st.columns(2)
-
-    with col1:
-      tanggal = st.date_input("Tanggal").strftime("%Y-%m-%d")
-      teknisi = st.text_input(
-          "Nama Teknisi", value="", placeholder="Ketik Nama Teknisi..."
+      st.file_uploader(
+          "Upload File Excel untuk Mass Import", type=["xlsx", "xls"]
       )
-      nama_alat = st.text_input("Nama Alat")
-      merk = st.text_input("Merk")
 
-    with col2:
-      nomor_seri = st.text_input("Nomor Seri / SN")
-      ruangan = st.text_input("Ruangan / Lokasi")
-      keterangan = st.text_area("Keterangan / Catatan")
+    with st.expander("⚠️ Zona Bahaya: Format / Kosongkan Data"):
+      if st.button("Kosongkan / Reset Tabel Ini"):
+        st.warning("Fitur reset dikunci demi keamanan data.")
 
-    # Fitur Upload Foto/Lampiran untuk SEMUA ROLE (Termasuk Teknisi GUEST)
-    uploaded_file = st.file_uploader(
-        "Upload Foto / Lampiran (PDF, PNG, JPG, XLSX)",
-        type=["pdf", "png", "jpg", "jpeg", "xlsx"],
-    )
-
-    submitted = st.form_submit_button(
-        f"Simpan Data {selected_menu}", use_container_width=True
-    )
-
-    if submitted:
-      if not nama_alat:
-        st.warning("Mohon isi minimal Nama Alat!")
-      elif not teknisi:
-        st.warning("Mohon isi Nama Teknisi!")
-      else:
-        new_row = {
-            "Tanggal": tanggal,
-            "Nama Teknisi": teknisi,
-            "Nama Alat": nama_alat,
-            "Merk": merk,
-            "Nomor Seri": nomor_seri,
-            "Ruangan": ruangan,
-            "Keterangan": keterangan,
-        }
-
-        if uploaded_file is not None:
-          new_row["Foto / Lampiran"] = uploaded_file.name
-
-        with st.spinner("Menyimpan data ke Cloud Google Sheets..."):
-          if save_sheet_data(selected_menu, new_row):
-            st.success(
-                f"Data {selected_menu} berhasil disimpan dan tersinkronisasi ke"
-                " Super Admin!"
-            )
-
+  # Bagian Live Editor & Tabel Data
   st.markdown("---")
-  st.subheader(f"📋 Tabel Data Terkini: {selected_menu}")
+  st.subheader(f"📝 Live-Editor & Tabel Data: {selected_menu}")
+
   df_current = load_sheet_data(selected_menu)
 
-  render_excel_download_button(
-      df_current, filename_prefix=f"Rekap_{selected_menu.replace(' ', '_')}"
-  )
+  # Filter pencarian barcode/nomor seri jika diisi di sidebar
+  if search_barcode and not df_current.empty:
+    match_col = [
+        col
+        for col in df_current.columns
+        if "seri" in col.lower() or "alat" in col.lower()
+    ]
+    if match_col:
+      df_current = df_current[
+          df_current[match_col[0]]
+          .astype(str)
+          .str.contains(search_barcode, case=False, na=False)
+      ]
+
   st.dataframe(df_current, use_container_width=True)
 
+  render_excel_download_button(
+      df_current, filename_prefix=selected_menu.replace(" ", "_")
+  )
+
 # ==========================================
-# 7. RINGKASAN & REKAPITULASI (Hanya Super Admin)
+# 7. RINGKASAN & REKAPITULASI (Hanya Admin)
 # ==========================================
 else:
   st.header("📊 Ringkasan Analisis Data W-SIGNAL")
@@ -364,13 +388,7 @@ else:
     with tabs[idx]:
       st.subheader(f"Rekapitulasi {sheet_name}")
       df_tab = load_sheet_data(sheet_name)
-
-      col_d1, col_d2 = st.columns(2)
-      with col_d1:
-        render_excel_download_button(
-            df_tab, filename_prefix=f"Rekap_{sheet_name.replace(' ', '_')}"
-        )
-      with col_d2:
-        render_template_download_button(sheet_name)
-
       st.dataframe(df_tab, use_container_width=True)
+      render_excel_download_button(
+          df_tab, filename_prefix=f"Rekap_{sheet_name.replace(' ', '_')}"
+      )
