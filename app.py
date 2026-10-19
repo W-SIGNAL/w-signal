@@ -54,7 +54,6 @@ def get_gspread_client():
 
 @st.cache_data(ttl=5)
 def load_sheet_data(worksheet_name):
-  """Membaca seluruh data lama secara fleksibel dari Google Sheets."""
   try:
     gc = get_gspread_client()
     sh = gc.open("W-SIGNAL_Database")
@@ -270,79 +269,76 @@ else:
 selected_menu = st.sidebar.radio("", menu_options, label_visibility="collapsed")
 
 # ==========================================
-# 6. TAMPILAN UTAMA & FITUR SESUAI GAMBAR LAMA
+# 6. TAMPILAN UTAMA & FORM INPUT TERBUKA
 # ==========================================
 st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
 
 if selected_menu != "Lihat Semua Data & Ringkasan":
 
-  # Tombol Aksi Lipat (Expander) seperti pada tampilan lama
+  # FORM INPUT LANGSUNG MUNCUL DI ATAS (TANPA EXPANDER TERSEMBUNYI)
+  st.header(f"📝 Input / Tambah Data: {selected_menu}")
+
+  with st.form(key=f"form_{selected_menu}", clear_on_submit=True):
+    col1, col2 = st.columns(2)
+    with col1:
+      nama_alat = st.text_input("Nama Alat")
+      merk = st.text_input("Merk")
+      type_alat = st.text_input("Type")
+      nomor_seri = st.text_input("Nomor Seri / SN")
+      tahun_pengadaan = st.text_input("Tahun Pengadaan")
+    with col2:
+      harga_perolehan = st.text_input("Harga Perolehan")
+      kondisi = st.selectbox(
+          "Kondisi", ["Kondisi Baik", "Kondisi KB", "Kondisi RB"]
+      )
+      ruangan = st.text_input("Ruangan / Lokasi")
+      keterangan = st.text_area("Keterangan / Catatan")
+
+    uploaded_file = st.file_uploader(
+        "Upload Foto / Lampiran (PDF, PNG, JPG, XLSX)",
+        type=["pdf", "png", "jpg", "jpeg", "xlsx"],
+    )
+
+    submitted = st.form_submit_button(
+        f"Simpan Data {selected_menu}", use_container_width=True
+    )
+
+    if submitted:
+      if not nama_alat:
+        st.warning("Mohon isi minimal Nama Alat!")
+      else:
+        new_row = {
+            "Nama Alat": nama_alat,
+            "Merk": merk,
+            "Type": type_alat,
+            "Nomor Seri": nomor_seri,
+            "Tahun Pengadaan": tahun_pengadaan,
+            "Harga Perolehan": harga_perolehan,
+            kondisi: "✓",
+            "Ruangan": ruangan,
+            "Keterangan": keterangan,
+        }
+        if uploaded_file is not None:
+          new_row["Lampiran"] = uploaded_file.name
+
+        with st.spinner("Menyimpan data ke Google Sheets..."):
+          if save_sheet_data(selected_menu, new_row):
+            st.success("Data berhasil disimpan!")
+
+  # Fitur tambahan khusus Admin (Mass Upload & Download Template)
   if st.session_state["user_role"] == "NAY":
-    with st.expander("➕ Tambah Data Manual"):
-      with st.form(key=f"form_{selected_menu}", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-          nama_alat = st.text_input("Nama Alat")
-          merk = st.text_input("Merk")
-          type_alat = st.text_input("Type")
-          nomor_seri = st.text_input("Nomor Seri / SN")
-          tahun_pengadaan = st.text_input("Tahun Pengadaan")
-        with col2:
-          harga_perolehan = st.text_input("Harga Perolehan")
-          kondisi = st.selectbox(
-              "Kondisi", ["Kondisi Baik", "Kondisi KB", "Kondisi RB"]
-          )
-          ruangan = st.text_input("Ruangan / Lokasi")
-          keterangan = st.text_area("Keterangan / Catatan")
-
-        uploaded_file = st.file_uploader(
-            "Upload Foto / Lampiran (PDF, PNG, JPG, XLSX)",
-            type=["pdf", "png", "jpg", "jpeg", "xlsx"],
-        )
-
-        submitted = st.form_submit_button(
-            f"Simpan Data {selected_menu}", use_container_width=True
-        )
-
-        if submitted:
-          if not nama_alat:
-            st.warning("Mohon isi minimal Nama Alat!")
-          else:
-            new_row = {
-                "Nama Alat": nama_alat,
-                "Merk": merk,
-                "Type": type_alat,
-                "Nomor Seri": nomor_seri,
-                "Tahun Pengadaan": tahun_pengadaan,
-                "Harga Perolehan": harga_perolehan,
-                kondisi: "✓",
-                "Ruangan": ruangan,
-                "Keterangan": keterangan,
-            }
-            if uploaded_file is not None:
-              new_row["Lampiran"] = uploaded_file.name
-
-            with st.spinner("Menyimpan data ke Google Sheets..."):
-              if save_sheet_data(selected_menu, new_row):
-                st.success("Data berhasil disimpan!")
-
     with st.expander(f"📁 Mass Upload & Download Template ({selected_menu})"):
       render_template_download_button(selected_menu)
       st.file_uploader(
           "Upload File Excel untuk Mass Import", type=["xlsx", "xls"]
       )
 
-    with st.expander("⚠️ Zona Bahaya: Format / Kosongkan Data"):
-      if st.button("Kosongkan / Reset Tabel Ini"):
-        st.warning("Fitur reset dikunci demi keamanan data.")
-
-  # Bagian Live Editor & Tabel Data
+  # Bagian Tabel Data
   st.markdown("---")
-  st.subheader(f"📝 Live-Editor & Tabel Data: {selected_menu}")
+  st.subheader(f"📋 Live-Editor & Tabel Data: {selected_menu}")
 
   df_current = load_sheet_data(selected_menu)
 
-  # Filter pencarian barcode/nomor seri jika diisi di sidebar
   if search_barcode and not df_current.empty:
     match_col = [
         col
