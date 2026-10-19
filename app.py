@@ -126,7 +126,6 @@ def save_sheet_data(worksheet_name, new_data_dict):
         row_to_append.append(str(v))
 
     target_ws.append_row(row_to_append)
-    st.cache_data.clear()
     return True
   except Exception as e:
     st.error(f"Gagal menyimpan data ke Google Sheets: {e}")
@@ -322,9 +321,10 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
 
         with st.spinner("Menyimpan data ke Google Sheets..."):
           if save_sheet_data(selected_menu, new_row):
+            st.cache_data.clear()
             st.success("Data berhasil disimpan!")
 
-  # Fitur Mass Upload Excel Khusus Admin (NAY) dengan Tombol Proses
+  # Fitur Mass Upload Excel Khusus Admin (NAY)
   if st.session_state["user_role"] == "NAY":
     with st.expander(f"📁 Mass Upload & Download Template ({selected_menu})"):
       render_template_download_button(selected_menu)
@@ -342,12 +342,12 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
             with st.spinner("Sedang memproses dan memasukkan data massal..."):
               for _, row in df_mass.iterrows():
                 row_dict = row.dropna().to_dict()
-                # Konversi key & value ke string bersih
                 clean_dict = {
                     str(k).strip(): str(v).strip() for k, v in row_dict.items()
                 }
                 if save_sheet_data(selected_menu, clean_dict):
                   count += 1
+            st.cache_data.clear()
             st.success(
                 f"Berhasil mengimpor {count} baris data ke Google Sheets!"
             )
