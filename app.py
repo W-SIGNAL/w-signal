@@ -32,7 +32,7 @@ st.markdown(
 
 
 # ==========================================
-# 2. KONEKSI GOOGLE SHEETS VIA SECRETS
+# 2. KONEKSI GOOGLE SHEETS VIA SECRETS (FIXED)
 # ==========================================
 @st.cache_resource
 def get_gspread_client():
@@ -40,13 +40,25 @@ def get_gspread_client():
       "https://www.googleapis.com/auth/spreadsheets",
       "https://www.googleapis.com/auth/drive",
   ]
-  if "gcp_service_account" in st.secrets:
-    secret_dict = dict(st.secrets["gcp_service_account"])
-  else:
+  if "gcp_service_account" not in st.secrets:
     st.error(
         "Secrets '[gcp_service_account]' tidak ditemukan di Streamlit Cloud!"
     )
     st.stop()
+
+  raw_secret = st.secrets["gcp_service_account"]
+
+  # Penanganan fleksibel untuk format Dict maupun JSON String
+  if isinstance(raw_secret, str):
+    secret_dict = json.loads(raw_secret)
+  else:
+    secret_dict = dict(raw_secret)
+
+  # Memastikan private_key terformat dengan newlines yang benar
+  if "private_key" in secret_dict:
+    secret_dict["private_key"] = secret_dict["private_key"].replace(
+        "\\n", "\n"
+    )
 
   creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
   return gspread.authorize(creds)
