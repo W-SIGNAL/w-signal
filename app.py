@@ -15,7 +15,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom Styling
 st.markdown(
     """
     <style>
@@ -37,18 +36,14 @@ st.markdown(
 # ==========================================
 @st.cache_resource
 def get_gspread_client():
-  """Menghubungkan aplikasi ke Google Sheets menggunakan Credentials dari Streamlit Secrets."""
   scopes = [
       "https://www.googleapis.com/auth/spreadsheets",
       "https://www.googleapis.com/auth/drive",
   ]
-
   if "gcp_service_account" in st.secrets:
     secret_dict = dict(st.secrets["gcp_service_account"])
   else:
-    st.error(
-        "Secrets '[gcp_service_account]' tidak ditemukan di Streamlit Cloud!"
-    )
+    st.error("Secrets '[gcp_service_account]' tidak ditemukan di Streamlit Cloud!")
     st.stop()
 
   creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
@@ -57,30 +52,24 @@ def get_gspread_client():
 
 @st.cache_data(ttl=60)
 def load_sheet_data(worksheet_name):
-  """Membaca data dari worksheet Google Sheets tertentu dan mengembalikannya sebagai DataFrame."""
   try:
     gc = get_gspread_client()
     sh = gc.open("W-SIGNAL_Database")
     worksheet = sh.worksheet(worksheet_name)
     data = worksheet.get_all_records()
-    df = pd.DataFrame(data)
-    return df
+    return pd.DataFrame(data)
   except Exception as e:
-    # Jika sheet kosong atau belum ada record
     return pd.DataFrame()
 
 
 def save_sheet_data(worksheet_name, new_data_dict):
-  """Menambahkan baris data baru ke worksheet Google Sheets."""
   try:
     gc = get_gspread_client()
     sh = gc.open("W-SIGNAL_Database")
     try:
       worksheet = sh.worksheet(worksheet_name)
     except gspread.exceptions.WorksheetNotFound:
-      worksheet = sh.add_worksheet(
-          title=worksheet_name, rows="100", cols="20"
-      )
+      worksheet = sh.add_worksheet(title=worksheet_name, rows="100", cols="20")
 
     headers = list(new_data_dict.keys())
     existing_records = worksheet.get_all_records()
@@ -98,10 +87,9 @@ def save_sheet_data(worksheet_name, new_data_dict):
 
 
 # ==========================================
-# 3. FUNGSI EKSOPR REKAP KE EXCEL (.XLSX)
+# 3. FUNGSI EKSPOR KE EXCEL (.XLSX)
 # ==========================================
 def convert_df_to_excel(df, sheet_name="Data_Rekap"):
-  """Mengonversi DataFrame Pandas menjadi file Excel binary (.xlsx)."""
   output = io.BytesIO()
   with pd.ExcelWriter(output, engine="openpyxl") as writer:
     df.to_excel(writer, index=False, sheet_name=sheet_name)
@@ -109,7 +97,6 @@ def convert_df_to_excel(df, sheet_name="Data_Rekap"):
 
 
 def render_excel_download_button(df, filename_prefix="Rekap_Data"):
-  """Menampilkan tombol unduh Excel (.xlsx) jika data tersedia."""
   if not df.empty:
     excel_data = convert_df_to_excel(df, sheet_name=filename_prefix[:30])
     st.download_button(
@@ -126,14 +113,13 @@ def render_excel_download_button(df, filename_prefix="Rekap_Data"):
 
 
 # ==========================================
-# 4. MANAJEMEN AUTENTIKASI / LOGIN ROLE
+# 4. MANAJEMEN AUTENTIKASI / LOGIN
 # ==========================================
 if "logged_in" not in st.session_state:
   st.session_state["logged_in"] = False
   st.session_state["user_role"] = "GUEST"
   st.session_state["username"] = "Teknisi Lapangan"
 
-# Sidebar Navigation Header
 st.sidebar.title("📟 KONTROL DATA")
 
 if not st.session_state["logged_in"]:
@@ -146,17 +132,16 @@ if not st.session_state["logged_in"]:
       st.session_state["logged_in"] = True
       st.session_state["user_role"] = "NAY"
       st.session_state["username"] = "NAY (Super Administrator)"
-      st.sidebar.success("Login berhasil sebagai Admin!")
+      st.sidebar.success("Login berhasil!")
       st.rerun()
     elif username_input == "GUEST" and password_input == "guest123":
       st.session_state["logged_in"] = True
       st.session_state["user_role"] = "GUEST"
       st.session_state["username"] = "GUEST (Teknisi Lapangan)"
-      st.sidebar.success("Login berhasil sebagai Teknisi!")
+      st.sidebar.success("Login berhasil!")
       st.rerun()
     else:
       st.sidebar.error("Username atau Password salah!")
-
 else:
   st.sidebar.markdown(f"**Status:** {st.session_state['username']}")
   if st.sidebar.button("Logout / Keluar", use_container_width=True):
@@ -183,11 +168,10 @@ menu_options = [
 
 selected_menu = st.sidebar.radio("Pilih Menu:", menu_options)
 
-# Judul Utama Dashboard
 st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
 
 # ==========================================
-# 6. PENANGANAN MASUKAN DATA UNTUK SETIAP MENU
+# 6. FORM INPUT & TABEL DATA
 # ==========================================
 if selected_menu != "Lihat Semua Data & Ringkasan":
   st.header(f"📝 Input Data: {selected_menu}")
@@ -233,15 +217,13 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
   st.subheader(f"📋 Tabel Data Terkini: {selected_menu}")
   df_current = load_sheet_data(selected_menu)
 
-  # Tombol Download Excel Khusus Menu Ini
   render_excel_download_button(
       df_current, filename_prefix=f"Rekap_{selected_menu.replace(' ', '_')}"
   )
   st.dataframe(df_current, use_container_width=True)
 
-
 # ==========================================
-# 7. RINGKASAN & REKAPITULASI TOTAL DATA
+# 7. RINGKASAN & REKAPITULASI
 # ==========================================
 else:
   st.header("📊 Ringkasan Analisis Data W-SIGNAL")
@@ -250,7 +232,6 @@ else:
     st.cache_data.clear()
     st.rerun()
 
-  # Tab untuk setiap kategori data rekap
   tabs = st.tabs(menu_options[:-1])
 
   for idx, sheet_name in enumerate(menu_options[:-1]):
@@ -258,10 +239,7 @@ else:
       st.subheader(f"Rekapitulasi {sheet_name}")
       df_tab = load_sheet_data(sheet_name)
 
-      # Render Tombol Unduh Excel (.xlsx)
       render_excel_download_button(
           df_tab, filename_prefix=f"Rekap_{sheet_name.replace(' ', '_')}"
       )
-
-      # Tampilkan DataFrame
       st.dataframe(df_tab, use_container_width=True)
