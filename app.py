@@ -1,296 +1,267 @@
-import streamlit as st
-import pandas as pd
+import io
 import json
-import os
-import base64
-from datetime import datetime, date
+import gspread
+from google.oauth2.service_account import Credentials
+import pandas as pd
+import streamlit as st
 
-# --- STRUKTUR KOLOM DEFAULT ---
-KOLOM_DEFAULT = {
-    "Inventory Alkes": ["Nama Alat", "Merk", "Type", "Nomor Seri", "Tahun Pengadaan", "Harga Perolehan", "Kondisi Baik", "Kondisi KB", "Kondisi RB", "Ruangan"],
-    "Perbaikan": ["Tanggal Perbaikan", "Nama Teknisi", "Nama Alat", "Merk", "Nomor Seri", "Ruangan", "Kerusakan", "Tindakan", "Keterangan", "Isian LK Service", "Foto", "Note"],
-    "Pemeliharaan": ["Tanggal Pemeliharaan", "Nama Teknisi", "Nama Alat", "Merk", "Nomor Seri", "Ruangan", "Hasil Pemeliharaan", "Isian LK IPM", "Foto", "Note"],
-    "Stok Suku Cadang": ["Nama Suku Cadang", "Spesifikasi", "Jumlah Stok", "Satuan", "In", "Out", "Keterangan"],
-    "Perencanaan RAB (Usulan)": ["Sub Kegiatan", "Nama Kegiatan", "Pagu Sub Kegiatan", "Nilai SPH", "Nilai Kontrak", "Sisa Pagu Anggaran Kegiatan", "Keterangan"],
-    "Surat Masuk (Nota Dinas)": ["Tanggal Terima Surat", "Tanggal Surat", "Nomor Surat", "Perihal", "Asal Surat", "Keterangan"],
-    "Rekap SR Vendor": ["Tanggal", "Penyedia", "Data Alat", "Kegiatan", "Analisa", "Keterangan"],
-    "Kalibrasi": ["Tanggal Kalibrasi", "Nomor Seri", "Nama Alat", "Merk", "Type", "Ruangan", "Keterangan", "Kalibrasi Ulang"]
-}
+# ==========================================
+# 1. KONFIGURASI HALAMAN & STYLES
+# ==========================================
+st.set_page_config(
+    page_title="W-SIGNAL",
+    page_icon="📟",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-# --- PENYIMPANAN LOKAL YANG STABIL & GRATIS ---
-def load_data_local():
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
-    DB_FILE = os.path.join(BASE_DIR, "database_w_signal.json")
-    loaded_db = {}
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r") as f:
-                loaded_db = json.load(f)
-        except Exception:
-            pass
-    for k in KOLOM_DEFAULT.keys():
-        if k not in loaded_db:
-            loaded_db[k] = []
-    if "SOP_Files" not in loaded_db:
-        loaded_db["SOP_Files"] = {}
-    return loaded_db
+# Custom Styling
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #0e1117;
+    }
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: bold;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-def save_data_local(data_to_save):
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
-    DB_FILE = os.path.join(BASE_DIR, "database_w_signal.json")
+
+# ==========================================
+# 2. KONEKSI GOOGLE SHEETS VIA SECRETS
+# ==========================================
+@st.cache_resource
+def get_gspread_client():
+  """Menghubungkan aplikasi ke Google Sheets menggunakan Credentials dari Streamlit Secrets."""
+  scopes = [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive",
+  ]
+
+  if "gcp_service_account" in st.secrets:
+    secret_dict = dict(st.secrets["gcp_service_account"])
+  else:
+    st.error(
+        "Secrets '[gcp_service_account]' tidak ditemukan di Streamlit Cloud!"
+    )
+    st.stop()
+
+  creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
+  return gspread.authorize(creds)
+
+
+@st.cache_data(ttl=60)
+def load_sheet_data(worksheet_name):
+  """Membaca data dari worksheet Google Sheets tertentu dan mengembalikannya sebagai DataFrame."""
+  try:
+    gc = get_gspread_client()
+    sh = gc.open("W-SIGNAL_Database")
+    worksheet = sh.worksheet(worksheet_name)
+    data = worksheet.get_all_records()
+    df = pd.DataFrame(data)
+    return df
+  except Exception as e:
+    # Jika sheet kosong atau belum ada record
+    return pd.DataFrame()
+
+
+def save_sheet_data(worksheet_name, new_data_dict):
+  """Menambahkan baris data baru ke worksheet Google Sheets."""
+  try:
+    gc = get_gspread_client()
+    sh = gc.open("W-SIGNAL_Database")
     try:
-        with open(DB_FILE, "w") as f:
-            json.dump(data_to_save, f, indent=4)
-        return True
-    except Exception as e:
-        st.error(f"Gagal menyimpan data: {e}")
-        return False
+      worksheet = sh.worksheet(worksheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+      worksheet = sh.add_worksheet(
+          title=worksheet_name, rows="100", cols="20"
+      )
 
-# --- SISTEM LOGIN MULTI-ROLE ---
-def check_login():
-    def login_entered():
-        user_input = st.session_state.get("username_input", "").strip()
-        pass_input = st.session_state.get("password_input", "").strip()
+    headers = list(new_data_dict.keys())
+    existing_records = worksheet.get_all_records()
 
-        CREDENTIALS = {
-            "NAY": {"pass": "lalanana", "role": "Admin", "nama": "NAY (Super Administrator)"},
-            "GUEST": {"pass": "12345", "role": "User", "nama": "Teknisi Lapangan"}
+    if not existing_records:
+      worksheet.append_row(headers)
+
+    row_to_append = [str(new_data_dict.get(h, "")) for h in headers]
+    worksheet.append_row(row_to_append)
+    st.cache_data.clear()
+    return True
+  except Exception as e:
+    st.error(f"Gagal menyimpan data ke Google Sheets: {e}")
+    return False
+
+
+# ==========================================
+# 3. FUNGSI EKSOPR REKAP KE EXCEL (.XLSX)
+# ==========================================
+def convert_df_to_excel(df, sheet_name="Data_Rekap"):
+  """Mengonversi DataFrame Pandas menjadi file Excel binary (.xlsx)."""
+  output = io.BytesIO()
+  with pd.ExcelWriter(output, engine="openpyxl") as writer:
+    df.to_excel(writer, index=False, sheet_name=sheet_name)
+  return output.getvalue()
+
+
+def render_excel_download_button(df, filename_prefix="Rekap_Data"):
+  """Menampilkan tombol unduh Excel (.xlsx) jika data tersedia."""
+  if not df.empty:
+    excel_data = convert_df_to_excel(df, sheet_name=filename_prefix[:30])
+    st.download_button(
+        label=f"📥 Unduh {filename_prefix} (.xlsx)",
+        data=excel_data,
+        file_name=f"{filename_prefix}.xlsx",
+        mime=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        use_container_width=True,
+    )
+  else:
+    st.info("Belum ada data untuk diunduh.")
+
+
+# ==========================================
+# 4. MANAJEMEN AUTENTIKASI / LOGIN ROLE
+# ==========================================
+if "logged_in" not in st.session_state:
+  st.session_state["logged_in"] = False
+  st.session_state["user_role"] = "GUEST"
+  st.session_state["username"] = "Teknisi Lapangan"
+
+# Sidebar Navigation Header
+st.sidebar.title("📟 KONTROL DATA")
+
+if not st.session_state["logged_in"]:
+  st.sidebar.subheader("🔒 Login System")
+  username_input = st.sidebar.text_input("Username")
+  password_input = st.sidebar.text_input("Password", type="password")
+
+  if st.sidebar.button("Login", use_container_width=True):
+    if username_input == "NAY" and password_input == "admin123":
+      st.session_state["logged_in"] = True
+      st.session_state["user_role"] = "NAY"
+      st.session_state["username"] = "NAY (Super Administrator)"
+      st.sidebar.success("Login berhasil sebagai Admin!")
+      st.rerun()
+    elif username_input == "GUEST" and password_input == "guest123":
+      st.session_state["logged_in"] = True
+      st.session_state["user_role"] = "GUEST"
+      st.session_state["username"] = "GUEST (Teknisi Lapangan)"
+      st.sidebar.success("Login berhasil sebagai Teknisi!")
+      st.rerun()
+    else:
+      st.sidebar.error("Username atau Password salah!")
+
+else:
+  st.sidebar.markdown(f"**Status:** {st.session_state['username']}")
+  if st.sidebar.button("Logout / Keluar", use_container_width=True):
+    st.session_state["logged_in"] = False
+    st.session_state["user_role"] = "GUEST"
+    st.rerun()
+
+st.sidebar.markdown("---")
+
+# ==========================================
+# 5. PILIHAN MENU APLIKASI
+# ==========================================
+menu_options = [
+    "Inventory Alkes",
+    "Perbaikan",
+    "Pemeliharaan",
+    "Stok Suku Cadang",
+    "Perencanaan RAB (Usulan)",
+    "Surat Masuk (Nota Dinas)",
+    "Rekap SR Vendor",
+    "Kalibrasi",
+    "Lihat Semua Data & Ringkasan",
+]
+
+selected_menu = st.sidebar.radio("Pilih Menu:", menu_options)
+
+# Judul Utama Dashboard
+st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
+
+# ==========================================
+# 6. PENANGANAN MASUKAN DATA UNTUK SETIAP MENU
+# ==========================================
+if selected_menu != "Lihat Semua Data & Ringkasan":
+  st.header(f"📝 Input Data: {selected_menu}")
+
+  with st.form(key=f"form_{selected_menu}", clear_on_submit=True):
+    col1, col2 = st.columns(2)
+
+    with col1:
+      tanggal = st.date_input("Tanggal").strftime("%Y-%m-%d")
+      teknisi = st.text_input("Nama Teknisi", value=st.session_state["username"])
+      nama_alat = st.text_input("Nama Alat")
+      merk = st.text_input("Merk")
+
+    with col2:
+      nomor_seri = st.text_input("Nomor Seri / SN")
+      ruangan = st.text_input("Ruangan / Lokasi")
+      keterangan = st.text_area("Keterangan / Catatan")
+
+    submitted = st.form_submit_button(
+        f"Simpan Data {selected_menu}", use_container_width=True
+    )
+
+    if submitted:
+      if not nama_alat:
+        st.warning("Mohon isi minimal Nama Alat!")
+      else:
+        new_row = {
+            "Tanggal": tanggal,
+            "Nama Teknisi": teknisi,
+            "Nama Alat": nama_alat,
+            "Merk": merk,
+            "Nomor Seri": nomor_seri,
+            "Ruangan": ruangan,
+            "Keterangan": keterangan,
         }
+        with st.spinner("Menyimpan data ke Cloud Google Sheets..."):
+          if save_sheet_data(selected_menu, new_row):
+            st.success(
+                f"Data {selected_menu} berhasil disimpan ke Google Sheets!"
+            )
 
-        if user_input in CREDENTIALS:
-            if pass_input == CREDENTIALS[user_input]["pass"]:
-                st.session_state["login_success"] = True
-                st.session_state["user_role"] = CREDENTIALS[user_input]["role"]
-                st.session_state["user_nama"] = CREDENTIALS[user_input]["nama"]
-                if "password_input" in st.session_state: del st.session_state["password_input"]
-                if "username_input" in st.session_state: del st.session_state["username_input"]
-            else:
-                st.session_state["login_success"] = False
-        else:
-            st.session_state["login_success"] = False
+  st.markdown("---")
+  st.subheader(f"📋 Tabel Data Terkini: {selected_menu}")
+  df_current = load_sheet_data(selected_menu)
 
-    if not st.session_state.get("login_success", False):
-        st.markdown("<h2 style='text-align: center;'>🔒 Login Sistem W-SIGNAL</h2>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.text_input("Username:", key="username_input")
-            st.text_input("Password:", type="password", key="password_input")
-            st.button("Masuk / Login", on_click=login_entered, use_container_width=True)
-            st.info("💡 **Akses Teknisi / Publik:**\n* **Username:** `GUEST` | **Password:** `12345` (Input Perbaikan & Pemeliharaan)")
-            if st.session_state.get("login_success") == False:
-                st.error("😕 Username atau Password salah.")
-        return False
-    else:
-        return True
+  # Tombol Download Excel Khusus Menu Ini
+  render_excel_download_button(
+      df_current, filename_prefix=f"Rekap_{selected_menu.replace(' ', '_')}"
+  )
+  st.dataframe(df_current, use_container_width=True)
 
-if check_login():
-    role_aktif = st.session_state.get("user_role", "User")
-    nama_aktif = st.session_state.get("user_nama", "User")
 
-    st.set_page_config(page_title="W-SIGNAL", layout="wide")
-    st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
+# ==========================================
+# 7. RINGKASAN & REKAPITULASI TOTAL DATA
+# ==========================================
+else:
+  st.header("📊 Ringkasan Analisis Data W-SIGNAL")
 
-    if "w_signal_db" not in st.session_state:
-        st.session_state["w_signal_db"] = load_data_local()
-    
-    data = st.session_state["w_signal_db"]
+  if st.button("🔄 Segarkan Data", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
 
-    def dapatkan_peta_inventory():
-        inv_list = data.get("Inventory Alkes", [])
-        peta = {}
-        for item in inv_list:
-            ns = str(item.get("Nomor Seri", "")).strip().lower()
-            if ns:
-                peta[ns] = {
-                    "Nama Alat": item.get("Nama Alat", ""),
-                    "Merk": item.get("Merk", ""),
-                    "Type": item.get("Type", ""),
-                    "Ruangan": item.get("Ruangan", ""),
-                    "Tahun Pengadaan": item.get("Tahun Pengadaan", "")
-                }
-        return peta
+  # Tab untuk setiap kategori data rekap
+  tabs = st.tabs(menu_options[:-1])
 
-    # --- SIDEBAR & NAVIGASI ---
-    st.sidebar.header("↩️ KONTROL DATA")
-    st.sidebar.caption(f"Status: **{nama_aktif}** ({role_aktif})")
-    
-    if st.sidebar.button("🚪 Logout / Keluar", use_container_width=True):
-        st.session_state["login_success"] = False
-        st.rerun()
+  for idx, sheet_name in enumerate(menu_options[:-1]):
+    with tabs[idx]:
+      st.subheader(f"Rekapitulasi {sheet_name}")
+      df_tab = load_sheet_data(sheet_name)
 
-    st.sidebar.markdown("---")
-    st.sidebar.header("Pilih Menu:")
+      # Render Tombol Unduh Excel (.xlsx)
+      render_excel_download_button(
+          df_tab, filename_prefix=f"Rekap_{sheet_name.replace(' ', '_')}"
+      )
 
-    if role_aktif == "Admin":
-        menu_pilihan = [
-            "Inventory Alkes", "Perbaikan", "Pemeliharaan", "Stok Suku Cadang",
-            "Perencanaan RAB (Usulan)", "Surat Masuk (Nota Dinas)", "Rekap SR Vendor", 
-            "Kalibrasi", "Lihat Semua Data & Ringkasan"
-        ]
-    else:
-        menu_pilihan = ["Perbaikan", "Pemeliharaan"]
-
-    selected_menu = st.sidebar.radio("Navigasi Menu", menu_pilihan, label_visibility="collapsed")
-
-    if role_aktif == "Admin":
-        total_perbaikan_notif = len(data.get('Perbaikan', []))
-        total_pemeliharaan_notif = len(data.get('Pemeliharaan', []))
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 🔔 Pusat Notifikasi Admin")
-        st.sidebar.info(f"📢 Total Laporan Masuk:\n* **Perbaikan:** {total_perbaikan_notif} Laporan\n* **Pemeliharaan:** {total_pemeliharaan_notif} Kegiatan")
-
-    if selected_menu == "Lihat Semua Data & Ringkasan" and role_aktif == "Admin":
-        st.header("📋 Ringkasan Analisis Data W-SIGNAL")
-        if st.button("🔄 Segarkan Data"):
-            st.session_state["w_signal_db"] = load_data_local()
-            st.rerun()
-
-        tabs = st.tabs(list(KOLOM_DEFAULT.keys()))
-        for i, key in enumerate(list(KOLOM_DEFAULT.keys())):
-            with tabs[i]:
-                df_tab = pd.DataFrame(data[key])
-                st.dataframe(df_tab, use_container_width=True)
-
-    else:
-        st.header(f"📋 Menu: {selected_menu}")
-        
-        with st.form(key=f"form_{selected_menu.lower().replace(' ', '_')}", clear_on_submit=True):
-            inputs = {}
-            uploaded_photo = None
-
-            if selected_menu == "Perbaikan":
-                st.markdown("### 📥 Form Input Perbaikan Alkes & LK Service")
-                col_s1, col_s2 = st.columns(2)
-                with col_s1:
-                    inputs["Tanggal Perbaikan"] = str(st.date_input("Tanggal Perbaikan"))
-                    inputs["Nama Teknisi"] = st.text_input("Nama Teknisi")
-                    inputs["Nama Alat"] = st.text_input("Nama Alat")
-                with col_s2:
-                    inputs["Merk"] = st.text_input("Merk / Tipe")
-                    inputs["Nomor Seri"] = st.text_input("Nomor Seri (SN)")
-                    inputs["Ruangan"] = st.text_input("Ruangan")
-
-                inputs["Kerusakan"] = st.text_area("Uraian Kerusakan")
-                inputs["Tindakan"] = st.text_area("Tindakan Perbaikan")
-                inputs["Keterangan"] = st.text_input("Keterangan")
-
-                st.markdown("---")
-                st.markdown("#### 🔧 Isian Lembar Kerja (LK Service Elektromedis)")
-                lk_s1, lk_s2 = st.columns(2)
-                with lk_s1:
-                    suhu_s = st.text_input("Suhu Ruangan (°C)", value="25", key="suhu_serv")
-                    kelembaban_s = st.text_input("Kelembaban (%)", value="60", key="kel_serv")
-                    tegangan_s = st.text_input("Tegangan Jala-jala (V)", value="220", key="teg_serv")
-                    env_s = f"Suhu: {suhu_s}°C, Kelembaban: {kelembaban_s}%, Tegangan: {tegangan_s}V"
-                with lk_s2:
-                    fisik_s = st.selectbox("Pemeriksaan Fisik / Main Unit / Aksesoris", ["Baik", "Kurang Baik", "Rusak"], key="fisik_serv")
-                    fungsi_s = st.selectbox("Pengujian Fungsi (Switch, Keypad, Alarm)", ["Normal", "Gangguan"], key="fungsi_serv")
-                    inputs["Isian LK Service"] = f"{env_s} | Fisik: {fisik_s}, Fungsi: {fungsi_s}"
-
-                uploaded_photo = st.file_uploader("📷 Upload Foto Perbaikan (.jpg, .png):", type=["jpg", "jpeg", "png"])
-                inputs["Foto"] = ""
-                inputs["Note"] = ""
-
-            elif selected_menu == "Pemeliharaan":
-                st.markdown("### 📋 Form Input Pemeliharaan & Lembar Kerja (LK IPM)")
-                col_p1, col_p2 = st.columns(2)
-                with col_p1:
-                    inputs["Tanggal Pemeliharaan"] = str(st.date_input("Tanggal Pemeliharaan"))
-                    inputs["Nama Teknisi"] = st.text_input("Nama Teknisi")
-                    inputs["Nama Alat"] = st.text_input("Nama Alat")
-                with col_p2:
-                    inputs["Merk"] = st.text_input("Merk / Tipe")
-                    inputs["Nomor Seri"] = st.text_input("Nomor Seri (SN)")
-                    inputs["Ruangan"] = st.text_input("Ruangan")
-
-                inputs["Hasil Pemeliharaan"] = st.selectbox("Hasil Pemeliharaan", ["Laik Pakai / Normal", "Perlu Perbaikan Lanjutan", "Tidak Laik Pakai"])
-
-                st.markdown("---")
-                st.markdown("#### 🔬 Isian Lembar Kerja (LK IPM Elektromedis)")
-                lk_c1, lk_c2 = st.columns(2)
-                with lk_c1:
-                    suhu_p = st.text_input("Suhu Ruangan (°C)", value="25", key="suhu_ipm")
-                    kelembaban_p = st.text_input("Kelembaban (%)", value="60", key="kel_ipm")
-                    ground_p = st.text_input("Ground Resistance (Ω)", value="< 0.5", key="ground_ipm")
-                with lk_c2:
-                    stabilizer_p = st.selectbox("Stabilizer / Kelistrikan", ["Normal", "Tidak Normal"], key="stab_ipm")
-                    fungsi_p = st.selectbox("Fungsi & Kelengkapan Alat", ["Lengkap & Berfungsi Baik", "Ada Catatan"], key="fungsi_ipm")
-                    inputs["Isian LK IPM"] = f"Suhu: {suhu_p}°C, Kelembaban: {kelembaban_p}%, Ground: {ground_p}Ω, Stabilizer: {stabilizer_p}, Fungsi: {fungsi_p}"
-
-                inputs["Keterangan"] = st.text_input("Keterangan / Catatan Pemeliharaan")
-                uploaded_photo = st.file_uploader("📷 Upload Foto Alat / Lembar Kerja (.jpg, .png):", type=["jpg", "jpeg", "png"])
-                inputs["Foto"] = ""
-                inputs["Note"] = ""
-
-            elif role_aktif == "Admin":
-                if selected_menu == "Inventory Alkes":
-                    inputs["Nama Alat"] = st.text_input("Nama Alat")
-                    inputs["Merk"] = st.text_input("Merk")
-                    inputs["Type"] = st.text_input("Type")
-                    inputs["Nomor Seri"] = st.text_input("Nomor Seri")
-                    inputs["Tahun Pengadaan"] = st.text_input("Tahun Pengadaan")
-                    inputs["Harga Perolehan"] = st.number_input("Harga Perolehan (Rp)", min_value=0.0, step=1000.0)
-                    inputs["Kondisi Baik"] = st.selectbox("Kondisi Baik", ["✓", "-"])
-                    inputs["Kondisi KB"] = st.selectbox("Kondisi KB", ["-", "✓"])
-                    inputs["Kondisi RB"] = st.selectbox("Kondisi RB", ["-", "✓"])
-                    inputs["Ruangan"] = st.text_input("Ruangan")
-                elif selected_menu in ["Stok Suku Cadang", "Perencanaan RAB (Usulan)", "Surat Masuk (Nota Dinas)", "Rekap SR Vendor", "Kalibrasi"]:
-                    headers = KOLOM_DEFAULT.get(selected_menu, [])
-                    for h in headers:
-                        inputs[h] = st.text_input(h)
-
-            submit_button = st.form_submit_button(label="➕ Kirim & Simpan Laporan")
-            if submit_button:
-                if uploaded_photo is not None:
-                    bytes_data = uploaded_photo.read()
-                    inputs["Foto"] = base64.b64encode(bytes_data).decode('utf-8')
-
-                if selected_menu in ["Perbaikan", "Pemeliharaan"]:
-                    peta_inv = dapatkan_peta_inventory()
-                    ns_key = str(inputs.get("Nomor Seri", "")).strip().lower()
-                    if ns_key in peta_inv:
-                        if not inputs.get("Nama Alat"): inputs["Nama Alat"] = peta_inv[ns_key]["Nama Alat"]
-                        if not inputs.get("Merk"): inputs["Merk"] = peta_inv[ns_key]["Merk"]
-                        if not inputs.get("Ruangan"): inputs["Ruangan"] = peta_inv[ns_key]["Ruangan"]
-
-                if selected_menu not in data:
-                    data[selected_menu] = []
-                data[selected_menu].append(inputs)
-                
-                if save_data_local(data):
-                    st.session_state["w_signal_db"] = data
-                    st.success(f"Laporan {selected_menu} berhasil disimpan dan otomatis masuk ke pusat data Admin!")
-                    st.rerun()
-
-        if role_aktif == "Admin":
-            st.markdown("---")
-            st.markdown("### 📝 Tabel & Galeri Riwayat Laporan (Pusat Data Admin)")
-            if st.button("🔄 Refresh Data"):
-                st.session_state["w_signal_db"] = load_data_local()
-                st.rerun()
-
-            menu_data = data.get(selected_menu, [])
-            df_menu = pd.DataFrame(menu_data)
-
-            if not df_menu.empty:
-                df_display = df_menu.copy()
-                if "Foto" in df_display.columns:
-                    df_display["Foto Status"] = df_display["Foto"].apply(lambda x: "🖼️ Ada Foto" if x else "Tidak Ada")
-                    df_display = df_display.drop(columns=["Foto"])
-                
-                st.dataframe(df_display, use_container_width=True)
-
-                if "Foto" in df_menu.columns:
-                    st.markdown("#### 🖼️ Galeri Foto Bukti Laporan:")
-                    cols = st.columns(3)
-                    idx_col = 0
-                    for idx, row in df_menu.iterrows():
-                        if row.get("Foto"):
-                            with cols[idx_col % 3]:
-                                try:
-                                    img_bytes = base64.b64decode(row["Foto"])
-                                    teknisi_info = f"Teknisi: {row.get('Nama Teknisi', 'Umum')}"
-                                    st.image(img_bytes, caption=f"{row.get('Nama Alat', 'Alat')} ({row.get('Nomor Seri', '')}) - {teknisi_info}", use_container_width=True)
-                                except Exception:
-                                    pass
-                            idx_col += 1
+      # Tampilkan DataFrame
+      st.dataframe(df_tab, use_container_width=True)
