@@ -269,13 +269,12 @@ else:
 selected_menu = st.sidebar.radio("", menu_options, label_visibility="collapsed")
 
 # ==========================================
-# 6. TAMPILAN UTAMA & FORM INPUT TERBUKA
+# 6. TAMPILAN UTAMA & FORM INPUT
 # ==========================================
 st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
 
 if selected_menu != "Lihat Semua Data & Ringkasan":
 
-  # FORM INPUT LANGSUNG MUNCUL DI ATAS (TANPA EXPANDER TERSEMBUNYI)
   st.header(f"📝 Input / Tambah Data: {selected_menu}")
 
   with st.form(key=f"form_{selected_menu}", clear_on_submit=True):
@@ -325,13 +324,36 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
           if save_sheet_data(selected_menu, new_row):
             st.success("Data berhasil disimpan!")
 
-  # Fitur tambahan khusus Admin (Mass Upload & Download Template)
+  # Fitur Mass Upload Excel Khusus Admin (NAY) dengan Tombol Proses
   if st.session_state["user_role"] == "NAY":
     with st.expander(f"📁 Mass Upload & Download Template ({selected_menu})"):
       render_template_download_button(selected_menu)
-      st.file_uploader(
-          "Upload File Excel untuk Mass Import", type=["xlsx", "xls"]
+
+      mass_file = st.file_uploader(
+          "Upload File Excel untuk Mass Import",
+          type=["xlsx", "xls"],
+          key="mass_excel",
       )
+      if mass_file is not None:
+        if st.button("🚀 Proses Mass Import Excel ke Google Sheets"):
+          try:
+            df_mass = pd.read_excel(mass_file)
+            count = 0
+            with st.spinner("Sedang memproses dan memasukkan data massal..."):
+              for _, row in df_mass.iterrows():
+                row_dict = row.dropna().to_dict()
+                # Konversi key & value ke string bersih
+                clean_dict = {
+                    str(k).strip(): str(v).strip() for k, v in row_dict.items()
+                }
+                if save_sheet_data(selected_menu, clean_dict):
+                  count += 1
+            st.success(
+                f"Berhasil mengimpor {count} baris data ke Google Sheets!"
+            )
+            st.rerun()
+          except Exception as e:
+            st.error(f"Gagal memproses file Excel: {e}")
 
   # Bagian Tabel Data
   st.markdown("---")
