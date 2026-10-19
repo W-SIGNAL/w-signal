@@ -115,42 +115,50 @@ def render_excel_download_button(df, filename_prefix="Rekap_Data"):
 
 
 # ==========================================
-# 4. MANAJEMEN AUTENTIKASI / LOGIN
+# 4. MANAJEMEN AUTENTIKASI & HALAMAN LOGIN
 # ==========================================
 if "logged_in" not in st.session_state:
   st.session_state["logged_in"] = False
   st.session_state["user_role"] = ""
   st.session_state["username"] = ""
 
-st.sidebar.title("📟 KONTROL DATA")
-
 if not st.session_state["logged_in"]:
-  st.sidebar.subheader("🔒 Login System")
-  username_input = st.sidebar.text_input("Username")
-  password_input = st.sidebar.text_input("Password", type="password")
+  col1, col2, col3 = st.columns([1, 1.2, 1])
+  with col2:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("### 🔒 Login Sistem W-SIGNAL")
 
-  if st.sidebar.button("Login", use_container_width=True):
-    if username_input == "NAY" and password_input == "lalanana":
-      st.session_state["logged_in"] = True
-      st.session_state["user_role"] = "NAY"
-      st.session_state["username"] = "NAY (Super Administrator)"
-      st.sidebar.success("Login Berhasil!")
-      st.rerun()
-    elif username_input == "GUEST" and password_input == "12345":
-      st.session_state["logged_in"] = True
-      st.session_state["user_role"] = "GUEST"
-      st.session_state["username"] = "GUEST (Teknisi Lapangan)"
-      st.sidebar.success("Login Berhasil!")
-      st.rerun()
-    else:
-      st.sidebar.error("Username atau Password salah!")
+    with st.form("login_form"):
+      username_input = st.text_input("Username")
+      password_input = st.text_input("Password", type="password")
+      submit_login = st.form_submit_button("Masuk / Login", use_container_width=True)
 
-  # Tampilan Halaman Utama Sebelum Login
-  st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
-  st.warning("🔒 Silakan Login melalui menu di sebelah kiri untuk mengakses aplikasi.")
-  st.stop()  # Menghentikan eksekusi kode di bawah jika belum login
+      if submit_login:
+        if username_input == "NAY" and password_input == "lalanana":
+          st.session_state["logged_in"] = True
+          st.session_state["user_role"] = "NAY"
+          st.session_state["username"] = "NAY (Super Administrator)"
+          st.success("Login Berhasil!")
+          st.rerun()
+        elif username_input == "GUEST" and password_input == "12345":
+          st.session_state["logged_in"] = True
+          st.session_state["user_role"] = "GUEST"
+          st.session_state["username"] = "GUEST (Teknisi Lapangan)"
+          st.success("Login Berhasil!")
+          st.rerun()
+        else:
+          st.error("Username atau Password salah!")
 
-# Jika Sudah Login
+    st.info(
+        "💡 **Akses Teknisi:**\n- Username: `GUEST` | Password: `12345`"
+        " (Khusus Input Perbaikan & Pemeliharaan)."
+    )
+  st.stop()
+
+# ==========================================
+# 5. DASHBOARD UTAMA & HAK AKSES MENU
+# ==========================================
+st.sidebar.title("📟 KONTROL DATA")
 st.sidebar.markdown(f"**Status:** {st.session_state['username']}")
 if st.sidebar.button("Logout / Keluar", use_container_width=True):
   st.session_state["logged_in"] = False
@@ -160,20 +168,21 @@ if st.sidebar.button("Logout / Keluar", use_container_width=True):
 
 st.sidebar.markdown("---")
 
-# ==========================================
-# 5. PILIHAN MENU APLIKASI
-# ==========================================
-menu_options = [
-    "Inventory Alkes",
-    "Perbaikan",
-    "Pemeliharaan",
-    "Stok Suku Cadang",
-    "Perencanaan RAB (Usulan)",
-    "Surat Masuk (Nota Dinas)",
-    "Rekap SR Vendor",
-    "Kalibrasi",
-    "Lihat Semua Data & Ringkasan",
-]
+# Menentukan menu berdasarkan role pengguna
+if st.session_state["user_role"] == "NAY":
+  menu_options = [
+      "Inventory Alkes",
+      "Perbaikan",
+      "Pemeliharaan",
+      "Stok Suku Cadang",
+      "Perencanaan RAB (Usulan)",
+      "Surat Masuk (Nota Dinas)",
+      "Rekap SR Vendor",
+      "Kalibrasi",
+      "Lihat Semua Data & Ringkasan",
+  ]
+else:  # Untuk GUEST / Teknisi
+  menu_options = ["Perbaikan", "Pemeliharaan"]
 
 selected_menu = st.sidebar.radio("Pilih Menu:", menu_options)
 
@@ -234,7 +243,7 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
   st.dataframe(df_current, use_container_width=True)
 
 # ==========================================
-# 7. RINGKASAN & REKAPITULASI
+# 7. RINGKASAN & REKAPITULASI (Hanya Admin)
 # ==========================================
 else:
   st.header("📊 Ringkasan Analisis Data W-SIGNAL")
@@ -243,9 +252,19 @@ else:
     st.cache_data.clear()
     st.rerun()
 
-  tabs = st.tabs(menu_options[:-1])
+  all_menus = [
+      "Inventory Alkes",
+      "Perbaikan",
+      "Pemeliharaan",
+      "Stok Suku Cadang",
+      "Perencanaan RAB (Usulan)",
+      "Surat Masuk (Nota Dinas)",
+      "Rekap SR Vendor",
+      "Kalibrasi",
+  ]
+  tabs = st.tabs(all_menus)
 
-  for idx, sheet_name in enumerate(menu_options[:-1]):
+  for idx, sheet_name in enumerate(all_menus):
     with tabs[idx]:
       st.subheader(f"Rekapitulasi {sheet_name}")
       df_tab = load_sheet_data(sheet_name)
