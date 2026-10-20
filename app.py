@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 # ==========================================
-# 1. KONFIGURASI HALAMAN & TEMA DARK MODEREN
+# 1. KONFIGURASI HALAMAN & TEMA DARK MODEREN (MDX STYLE)
 # ==========================================
 st.set_page_config(
     page_title="W-SIGNAL - SIMRS Elektromedis",
@@ -54,6 +54,13 @@ st.markdown(
     .stButton > button {
         border-radius: 8px;
         font-weight: bold;
+    }
+    .card-box {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 15px;
     }
     </style>
     """,
@@ -108,7 +115,7 @@ def save_sheet_data(menu_name, new_data_dict):
 
 
 # ==========================================
-# 3. FUNGSI EKSPOR & TEMPLATE EXCEL
+# 3. FUNGSI EKSPOR & TEMPLATE EXCEL (.XLSX)
 # ==========================================
 def convert_df_to_excel(df, sheet_name="Data_Rekap"):
   output = io.BytesIO()
@@ -161,7 +168,7 @@ def render_template_download_button(sheet_name):
 
 
 # ==========================================
-# 4. AUTENTIKASI & LOGIN
+# 4. MANAJEMEN AUTENTIKASI & HALAMAN LOGIN
 # ==========================================
 if "logged_in" not in st.session_state:
   st.session_state["logged_in"] = False
@@ -204,7 +211,7 @@ if not st.session_state["logged_in"]:
   st.stop()
 
 # ==========================================
-# 5. SIDEBAR & NAVIGASI
+# 5. SIDEBAR & MENU UTAMA
 # ==========================================
 st.sidebar.markdown("### 🗂 KONTROL DATA")
 st.sidebar.markdown(f"**Status Login:** `{st.session_state['username']}`")
@@ -247,9 +254,10 @@ else:
 selected_menu = st.sidebar.radio("", menu_options, label_visibility="collapsed")
 
 # ==========================================
-# 6. TAMPILAN PORTFOLIO ALAT (MDX STYLE)
+# 6. BRIDGING HUB PORTFOLIO ALAT (MDX RSKD STYLE DINAMIS)
 # ==========================================
 if selected_menu == "Detail & Portfolio Alat (MDX Style)":
+
   top_c1, top_c2 = st.columns([3, 1])
   with top_c1:
     st.caption("Home / Inventory / Detail / Alat Kesehatan RSUD Welas Asih")
@@ -259,19 +267,76 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
 
   st.markdown("---")
 
+  # LOAD DATA INVENTORY UNTUK PILIH ALAT
+  df_inv = load_sheet_data("Inventory Alkes")
+
+  selected_sn = ""
+  selected_alat = {}
+
+  if not df_inv.empty:
+    # Mengambil daftar kombinasi Nama Alat & SN
+    col_sn = [
+        c
+        for c in df_inv.columns
+        if "seri" in c.lower() or "sn" in c.lower() or "nomor" in c.lower()
+    ]
+    col_nama = [c for c in df_inv.columns if "nama" in c.lower()]
+
+    sn_column = col_sn[0] if col_sn else df_inv.columns[0]
+    nama_column = col_nama[0] if col_nama else df_inv.columns[0]
+
+    # Filter jika ada input barcode di sidebar
+    if search_barcode:
+      filtered_inv = df_inv[
+          df_inv[sn_column]
+          .astype(str)
+          .str.contains(search_barcode, case=False, na=False)
+      ]
+      if not filtered_inv.empty:
+        df_inv = filtered_inv
+
+    options_alat = [
+        f"{row[nama_column]} (SN: {row[sn_column]})"
+        for _, row in df_inv.iterrows()
+    ]
+    chosen_option = st.selectbox("📌 Pilih Alat Kesehatan:", options_alat)
+
+    if chosen_option:
+      idx = options_alat.index(chosen_option)
+      selected_alat = df_inv.iloc[idx].to_dict()
+      selected_sn = str(selected_alat.get(sn_column, ""))
+  else:
+    st.info(
+        "Belum ada data di Inventory Alkes. Silakan tambahkan alat terlebih"
+        " dahulu."
+    )
+    # Default Dummy Tampilan jika inventory masih kosong
+    selected_alat = {
+        "Nama Alat": "Infusion Pump",
+        "Merk": "Mindray",
+        "Type": "BeneFusion eV3",
+        "Nomor Seri": "SH2A34000503T",
+        "Ruangan": "ICU Room 3",
+        "Harga Perolehan": "26.500.000",
+        "Tahun Pengadaan": "2023",
+        "Kondisi Baik": "✓",
+    }
+    selected_sn = "SH2A34000503T"
+
+  # TAMPILAN HEADER DETAIL ALAT
   head_col1, head_col2 = st.columns([1, 2])
   with head_col1:
     st.image(
         "https://via.placeholder.com/400x300.png?text=Foto+Fisik+Alat",
-        caption="Mindray BeneFusion eV3 / Infusion Pump",
+        caption=f"{selected_alat.get('Merk', 'Alkes')} - {selected_alat.get('Nama Alat', 'Alat')}",
         use_column_width=True,
     )
 
   with head_col2:
-    st.title("Infusion Pump")
-    st.markdown("""
-        **SN:** `SH2A34000503T` | **ID Alat:** `EM-000895`  
-        **Lokasi:** ICU Room 3 - RSUD Welas Asih
+    st.title(f"{selected_alat.get('Nama Alat', 'Infusion Pump')}")
+    st.markdown(f"""
+        **SN:** `{selected_sn}` | **Merk/Type:** `{selected_alat.get('Merk', '-')}` / `{selected_alat.get('Type', '-')}`  
+        **Lokasi:** {selected_alat.get('Ruangan', 'RSUD Welas Asih')}
         """)
 
     m1, m2, m3 = st.columns(3)
@@ -281,7 +346,7 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
           "<span class='badge-condition'>Baik</span>", unsafe_allow_html=True
       )
     with m2:
-      st.markdown("Risk")
+      st.markdown("Risk Level")
       st.markdown(
           "<span class='badge-risk'>Medium</span>", unsafe_allow_html=True
       )
@@ -293,12 +358,14 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("**Harga Pembelian:**")
+    harga_val = selected_alat.get('Harga Perolehan', '26.500.000')
     st.markdown(
-        "<div class='price-tag'>Rp 26.500.000</div>", unsafe_allow_html=True
+        f"<div class='price-tag'>Rp {harga_val}</div>", unsafe_allow_html=True
     )
 
   st.markdown("<br>", unsafe_allow_html=True)
 
+  # 6 TAB BRIDGING UTAMA MDX RSKD
   tab_data, tab_ipm, tab_admin, tab_doc, tab_part, tab_hist = st.tabs([
       "Data Alat",
       "IPM & Kalibrasi",
@@ -308,95 +375,111 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
       "History",
   ])
 
+  # TAB 1: DATA ALAT (BRIDGING INVENTORY ALKES)
   with tab_data:
-    st.subheader("Data Spesifikasi Alat & Fisik")
+    st.subheader("Data Spesifikasi Alat & Fisik (Bridging Inventory)")
     d1, d2 = st.columns(2)
     with d1:
-      st.markdown("**Status:** Aktif")
-      st.markdown("**Kepemilikan:** Rumah Sakit RSUD Welas Asih")
-      st.markdown("**Daya Listrik:** 46 VA")
+      st.markdown(f"**Nama Alat:** {selected_alat.get('Nama Alat', '-')}")
+      st.markdown(f"**Merk / Type:** {selected_alat.get('Merk', '-')} / {selected_alat.get('Type', '-')}")
+      st.markdown(f"**Nomor Seri:** {selected_sn}")
+      st.markdown(f"**Ruangan / Lokasi:** {selected_alat.get('Ruangan', '-')}")
     with d2:
-      st.markdown("**Distributor:** PT. Internusa Dua Medika")
-      st.markdown("**Tahun Pengadaan:** 2023")
-      st.markdown("**Masa Garansi:** 2024-06-13")
+      st.markdown(f"**Tahun Pengadaan:** {selected_alat.get('Tahun Pengadaan', '-')}")
+      st.markdown(f"**Harga Perolehan:** Rp {selected_alat.get('Harga Perolehan', '-')}")
+      st.markdown(f"**Keterangan:** {selected_alat.get('Keterangan', '-')}")
 
+  # TAB 2: IPM & KALIBRASI (BRIDGING PEMELIHARAAN & KALIBRASI)
   with tab_ipm:
-    st.subheader("#Equipment Management (EM) Classification")
-    em_df = pd.DataFrame({
-        "Category": [
-            "Equipment Function",
-            "Clinical Application",
-            "PM Requirement",
-            "Incident History",
-        ],
-        "#EM": [8, 4, 4, 2],
-        "Description": [
-            "Physical therapy and treatment",
-            "Potential patient or operator injury",
-            "Above-average",
-            "Significant: more than one every 6 months",
-        ],
-    })
-    st.table(em_df)
-
+    st.subheader("Riwayat Maintenance (IPM) & Kalibrasi Berkala")
     i1, i2 = st.columns(2)
+
+    df_ipm = load_sheet_data("Pemeliharaan")
+    df_kal = load_sheet_data("Kalibrasi")
+
     with i1:
-      st.markdown("#### Maintenance (IPM)")
-      st.markdown("- **Last Maintenance:** 21-07-2026")
-      st.markdown("- **Next Maintenance:** 21-01-2027")
-      st.markdown("- **Interval:** 6 Bulan (Semi-annual)")
+      st.markdown("#### 🛠️ Data Pemeliharaan (IPM)")
+      if not df_ipm.empty and selected_sn:
+        match_ipm = df_ipm[
+            df_ipm.astype(str)
+            .apply(lambda x: x.str.contains(selected_sn, case=False))
+            .any(axis=1)
+        ]
+        if not match_ipm.empty:
+          st.dataframe(match_ipm, use_container_width=True)
+        else:
+          st.info(f"Belum ada riwayat IPM untuk SN: {selected_sn}")
+      else:
+        st.info("Belum ada data di menu Pemeliharaan.")
+
     with i2:
-      st.markdown("#### Kalibrasi")
-      st.markdown("- **Last Calibration:** 22-09-2026")
-      st.markdown("- **Next Calibration:** 22-09-2027")
-      st.markdown("- **Interval:** 1 Tahun")
+      st.markdown("#### 📐 Data Sertifikasi Kalibrasi")
+      if not df_kal.empty and selected_sn:
+        match_kal = df_kal[
+            df_kal.astype(str)
+            .apply(lambda x: x.str.contains(selected_sn, case=False))
+            .any(axis=1)
+        ]
+        if not match_kal.empty:
+          st.dataframe(match_kal, use_container_width=True)
+        else:
+          st.info(f"Belum ada riwayat kalibrasi untuk SN: {selected_sn}")
+      else:
+        st.info("Belum ada data di menu Kalibrasi.")
 
+  # TAB 3: ADMINISTRASI
   with tab_admin:
-    st.subheader("Data Administrasi & Penyusutan Value")
+    st.subheader("Data Administrasi & Akumulasi Penyusutan Value")
     a1, a2 = st.columns(2)
+    harga_num = (
+        float(
+            str(selected_alat.get("Harga Perolehan", "0"))
+            .replace(".", "")
+            .replace(",", "")
+            .replace("Rp", "")
+            .strip()
+        )
+        if selected_alat.get("Harga Perolehan")
+        else 26500000
+    )
+
+    penyusutan_3thn = harga_num * 0.3
+    nilai_buku = max(0, harga_num - penyusutan_3thn)
+
     with a1:
-      st.markdown("**Nilai Perolehan:** Rp 26.500.000")
-      st.markdown("**Penyusutan Tahunan:** Rp 2.650.000")
-      st.markdown("**Usia Pakai:** 3 Tahun")
+      st.markdown(f"**Nilai Perolehan Awal:** Rp {harga_num:,.0f}")
+      st.markdown(f"**Estimasi Usia Teknis:** 10 Tahun")
+      st.markdown(f"**Status Garansi:** Selesai")
     with a2:
-      st.markdown("**Akumulasi Penyusutan:** Rp 7.950.000")
-      st.markdown("**Nilai Buku Saat Ini:** Rp 18.550.000")
-      st.markdown("**Perkiraan Harga Pengganti:** Rp 31.783.334")
+      st.markdown(f"**Akumulasi Penyusutan (3 Thn):** Rp {penyusutan_3thn:,.0f}")
+      st.markdown(f"**Nilai Buku Terkini:** Rp {nilai_buku:,.0f}")
 
+  # TAB 4: DOCUMENTS (BRIDGING MANAJEMEN SOP ALKES)
   with tab_doc:
-    st.subheader("Technical Documents & Sertifikat")
-    st.markdown("📄 **Service Manual:** `SM_Mindray_eV3.pdf` [Download]")
-    st.markdown("📄 **SPO Operasional:** `IE/129/PA/IPSRS/23` [View]")
-    st.markdown("📄 **SPO Preventive Maintenance:** `SPO_IPM_Infusion.pdf`")
-    st.markdown("---")
-    st.subheader("Sertifikat Kalibrasi")
-    cal_data = pd.DataFrame({
-        "Tanggal": ["22/09/2026", "04/12/2025", "17/09/2024"],
-        "Institusi / BPFK": [
-            "PT. NIRMALA KARYA",
-            "PT. FAMED",
-            "PT. Mitra Tera Akurasi",
-        ],
-        "Hasil": ["Laik Pakai", "Laik Pakai", "Laik Pakai"],
-        "Berkas Sertifikat": [
-            "Sertifikat_2026.pdf",
-            "-",
-            "1737678290_cert.pdf",
-        ],
-    })
-    st.dataframe(cal_data, use_container_width=True)
+    st.subheader("Technical Documents & File Terlampir")
+    df_sop = load_sheet_data("Manajemen SOP Alkes")
+    if not df_sop.empty:
+      st.markdown("##### 📄 SOP Operasional & Maintenance (SOP Alkes)")
+      st.dataframe(df_sop, use_container_width=True)
+    else:
+      st.info("SOP Alkes dapat diunggah melalui menu 'Manajemen SOP Alkes'.")
 
+  # TAB 5: SPAREPART (BRIDGING STOK SUKU CADANG & ACTION PERBAIKAN)
   with tab_part:
-    st.subheader("Tabel Sparepart Rutin & Penggantian Suku Cadang")
-    part_df = load_sheet_data("Stok Suku Cadang")
-    if not part_df.empty:
-      st.dataframe(part_df, use_container_width=True)
+    st.subheader("Tabel Riwayat Penggantian Sparepart")
+    df_part = load_sheet_data("Stok Suku Cadang")
+    if not df_part.empty:
+      st.dataframe(df_part, use_container_width=True)
     else:
       st.info("Belum ada riwayat penggantian suku cadang.")
 
+  # TAB 6: HISTORY (BRIDGING TIMELINE PERBAIKAN & PEMELIHARAAN)
   with tab_hist:
-    st.subheader("Activity Graph & Historical Log")
-    fig, ax = plt.subplots(figsize=(10, 3))
+    st.subheader("Activity Graph & Integrated Historical Log")
+
+    df_reb = load_sheet_data("Perbaikan")
+
+    fig, ax = plt.subplots(figsize=(10, 2.5))
     ax.set_facecolor("#161b22")
     fig.patch.set_facecolor("#161b22")
     months = [
@@ -419,9 +502,26 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
     st.pyplot(fig)
 
     st.markdown("---")
-    st.markdown("🟢 **22 Sep 2026** — **Kalibrasi**: Laik Pakai (PT. Nirmala)")
-    st.markdown("🔵 **21 Jul 2026** — **Maintenance**: Passed (Inspeksi Rutin)")
-    st.markdown("🔴 **05 Jan 2026** — **Perbaikan**: Penggantian Sensor Drip")
+    st.markdown("### 📋 Timeline Aktivitas Terintegrasi")
+
+    if not df_reb.empty and selected_sn:
+      match_reb = df_reb[
+          df_reb.astype(str)
+          .apply(lambda x: x.str.contains(selected_sn, case=False))
+          .any(axis=1)
+      ]
+      if not match_reb.empty:
+        for _, r in match_reb.iterrows():
+          st.markdown(
+              f"🔴 **{r.get('Tanggal Pekerjaan', 'Perbaikan')}** — **Perbaikan"
+              f" (LK Service)**: {r.get('Keluhan', '-')} | Action:"
+              f" {r.get('Detail Action', '-')}"
+          )
+      else:
+        st.info("Belum ada catatan perbaikan khusus untuk alat ini.")
+    else:
+      st.markdown("🟢 **22 Sep 2026** — **Kalibrasi**: Laik Pakai (PT. Nirmala)")
+      st.markdown("🔵 **21 Jul 2026** — **Maintenance**: Passed (Inspeksi Rutin)")
 
 # ==========================================
 # 7. FORM INPUT LEMBAR KERJA & MENU W-SIGNAL
