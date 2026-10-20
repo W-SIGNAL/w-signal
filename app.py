@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 # ==========================================
-# 1. KONFIGURASI HALAMAN & TEMA DARK MODEREN (MDX STYLE)
+# 1. KONFIGURASI HALAMAN & TEMA DARK MODEREN
 # ==========================================
 st.set_page_config(
     page_title="W-SIGNAL - SIMRS Elektromedis",
@@ -55,13 +55,6 @@ st.markdown(
         border-radius: 8px;
         font-weight: bold;
     }
-    .card-box {
-        background-color: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 15px;
-    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -74,7 +67,6 @@ LOCAL_DB_FILE = "database_w_signal.json"
 # 2. PENYIMPANAN DATA LOKAL (FILE JSON)
 # ==========================================
 def load_all_local_data():
-  """Membaca seluruh database dari file JSON lokal."""
   if os.path.exists(LOCAL_DB_FILE):
     try:
       with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
@@ -85,13 +77,11 @@ def load_all_local_data():
 
 
 def save_all_local_data(data):
-  """Menyimpan seluruh database ke file JSON lokal."""
   with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
     json.dump(data, f, ensure_ascii=False, indent=4)
 
 
 def load_sheet_data(menu_name):
-  """Mengambil data tabel sebagai DataFrame Pandas."""
   db = load_all_local_data()
   records = db.get(menu_name, [])
   if not records:
@@ -100,19 +90,16 @@ def load_sheet_data(menu_name):
 
 
 def save_sheet_data(menu_name, new_data_dict):
-  """Menambahkan satu baris data ke penyimpanan lokal."""
   try:
     db = load_all_local_data()
     if menu_name not in db:
       db[menu_name] = []
-
     clean_dict = {
         str(k).strip(): str(v).strip()
         for k, v in new_data_dict.items()
         if v is not None
     }
     db[menu_name].append(clean_dict)
-
     save_all_local_data(db)
     return True
   except Exception as e:
@@ -121,7 +108,7 @@ def save_sheet_data(menu_name, new_data_dict):
 
 
 # ==========================================
-# 3. FUNGSI EKSPOR & TEMPLATE EXCEL (.XLSX)
+# 3. FUNGSI EKSPOR & TEMPLATE EXCEL
 # ==========================================
 def convert_df_to_excel(df, sheet_name="Data_Rekap"):
   output = io.BytesIO()
@@ -174,7 +161,7 @@ def render_template_download_button(sheet_name):
 
 
 # ==========================================
-# 4. MANAJEMEN AUTENTIKASI & HALAMAN LOGIN
+# 4. AUTENTIKASI & LOGIN
 # ==========================================
 if "logged_in" not in st.session_state:
   st.session_state["logged_in"] = False
@@ -217,7 +204,7 @@ if not st.session_state["logged_in"]:
   st.stop()
 
 # ==========================================
-# 5. SIDEBAR & MENU UTAMA
+# 5. SIDEBAR & NAVIGASI
 # ==========================================
 st.sidebar.markdown("### 🗂 KONTROL DATA")
 st.sidebar.markdown(f"**Status Login:** `{st.session_state['username']}`")
@@ -260,10 +247,9 @@ else:
 selected_menu = st.sidebar.radio("", menu_options, label_visibility="collapsed")
 
 # ==========================================
-# 6. TAMPILAN INTERAKTIF MDX RSKD STYLE
+# 6. TAMPILAN PORTFOLIO ALAT (MDX STYLE)
 # ==========================================
 if selected_menu == "Detail & Portfolio Alat (MDX Style)":
-
   top_c1, top_c2 = st.columns([3, 1])
   with top_c1:
     st.caption("Home / Inventory / Detail / Alat Kesehatan RSUD Welas Asih")
@@ -313,7 +299,6 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
 
   st.markdown("<br>", unsafe_allow_html=True)
 
-  # 6 TAB UTAMA MDX RSKD
   tab_data, tab_ipm, tab_admin, tab_doc, tab_part, tab_hist = st.tabs([
       "Data Alat",
       "IPM & Kalibrasi",
@@ -323,7 +308,6 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
       "History",
   ])
 
-  # TAB 1: DATA ALAT
   with tab_data:
     st.subheader("Data Spesifikasi Alat & Fisik")
     d1, d2 = st.columns(2)
@@ -336,7 +320,6 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
       st.markdown("**Tahun Pengadaan:** 2023")
       st.markdown("**Masa Garansi:** 2024-06-13")
 
-  # TAB 2: IPM & KALIBRASI
   with tab_ipm:
     st.subheader("#Equipment Management (EM) Classification")
     em_df = pd.DataFrame({
@@ -368,7 +351,6 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
       st.markdown("- **Next Calibration:** 22-09-2027")
       st.markdown("- **Interval:** 1 Tahun")
 
-  # TAB 3: ADMINISTRASI
   with tab_admin:
     st.subheader("Data Administrasi & Penyusutan Value")
     a1, a2 = st.columns(2)
@@ -381,7 +363,6 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
       st.markdown("**Nilai Buku Saat Ini:** Rp 18.550.000")
       st.markdown("**Perkiraan Harga Pengganti:** Rp 31.783.334")
 
-  # TAB 4: DOCUMENTS
   with tab_doc:
     st.subheader("Technical Documents & Sertifikat")
     st.markdown("📄 **Service Manual:** `SM_Mindray_eV3.pdf` [Download]")
@@ -405,7 +386,6 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
     })
     st.dataframe(cal_data, use_container_width=True)
 
-  # TAB 5: SPAREPART
   with tab_part:
     st.subheader("Tabel Sparepart Rutin & Penggantian Suku Cadang")
     part_df = load_sheet_data("Stok Suku Cadang")
@@ -414,7 +394,6 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
     else:
       st.info("Belum ada riwayat penggantian suku cadang.")
 
-  # TAB 6: HISTORY
   with tab_hist:
     st.subheader("Activity Graph & Historical Log")
     fig, ax = plt.subplots(figsize=(10, 3))
@@ -448,11 +427,10 @@ if selected_menu == "Detail & Portfolio Alat (MDX Style)":
 # 7. FORM INPUT LEMBAR KERJA & MENU W-SIGNAL
 # ==========================================
 elif selected_menu != "Lihat Semua Data & Ringkasan":
-
   st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
   st.header(f"📝 Input Data / Lembar Kerja: {selected_menu}")
 
-  # A. FORM PERBAIKAN (LK SERVICE ELEKTROMEDIS)
+  # A. FORM PERBAIKAN
   if selected_menu == "Perbaikan":
     with st.form(key="form_perbaikan_lkem", clear_on_submit=True):
       st.subheader("📋 Lembar Kerja Service Elektromedis RSUD Welas Asih")
@@ -560,7 +538,7 @@ elif selected_menu != "Lihat Semua Data & Ringkasan":
             st.success("Data Perbaikan Berhasil Disimpan!")
             st.rerun()
 
-  # B. FORM PEMELIHARAAN (LK IPM ELEKTROMEDIS)
+  # B. FORM PEMELIHARAAN
   elif selected_menu == "Pemeliharaan":
     with st.form(key="form_pemeliharaan_ipm", clear_on_submit=True):
       st.subheader("📋 Lembar Kerja Inspection Preventive Maintenance (IPM)")
@@ -573,4 +551,218 @@ elif selected_menu != "Lihat Semua Data & Ringkasan":
         instalasi = st.text_input("Instalasi / Unit")
         ruangan = st.text_input("Ruangan")
       with c3:
-        nama_alat = st.text_input("Nama Alat *
+        nama_alat = st.text_input("Nama Alat *")
+        merk_tipe = st.text_input("Merk / Tipe")
+
+      c4, c5, c6 = st.columns(3)
+      with c4:
+        nomor_seri = st.text_input("Nomor Seri (SN)")
+      with c5:
+        tgl_kalibrasi = st.text_input("Tanggal Kalibrasi Terakhir")
+      with c6:
+        alat_kerja = st.text_input("Alat Kerja yang Digunakan")
+
+      st.markdown("##### 🔍 Inspection & Pemeriksaan Fungsi Alat")
+      f1, f2, f3 = st.columns(3)
+      with f1:
+        display_mon = st.selectbox("Display / Monitor", ["Baik", "Tidak Baik"])
+        switch_on_off = st.selectbox("Switch On/Off", ["Baik", "Tidak Baik"])
+      with f2:
+        control_setting = st.selectbox(
+            "Control Setting", ["Baik", "Tidak Baik"]
+        )
+        keypad = st.selectbox("Keypad", ["Baik", "Tidak Baik"])
+      with f3:
+        alarm = st.selectbox("Alarm", ["Baik", "Tidak Baik"])
+        power_cord = st.selectbox(
+            "Power Cord / Adaptor", ["Baik", "Tidak Baik"]
+        )
+
+      h1, h2, h3 = st.columns(3)
+      with h1:
+        stok_konsumabel = st.selectbox(
+            "Stok Konsumabel", ["Ada", "Tidak Ada", "Habis"]
+        )
+      with h2:
+        hasil_maintenance = st.selectbox(
+            "Hasil Maintenance",
+            [
+                "Alat Berfungsi Dengan Baik",
+                "Alat Tidak Dapat Berfungsi Dengan Baik",
+            ],
+        )
+      with h3:
+        ganti_consumable = st.text_input(
+            "Penggantian Consumable Part / Baterai"
+        )
+
+      m1, m2 = st.columns(2)
+      with m1:
+        teknisi = st.text_input(
+            "Teknisi Pelaksana", value=st.session_state["username"]
+        )
+      with m2:
+        pj_ruangan = st.text_input("PJ Alat / Ruangan")
+
+      uploaded_file = st.file_uploader(
+          "Upload Foto / Lampiran Pemeliharaan",
+          type=["pdf", "png", "jpg", "xlsx"],
+      )
+      submitted = st.form_submit_button(
+          "Simpan Lembar Kerja IPM", use_container_width=True
+      )
+
+      if submitted:
+        if not nama_alat:
+          st.warning("Mohon isi minimal Nama Alat!")
+        else:
+          new_row = {
+              "No LKEM": no_lkem,
+              "Tanggal IPM": str(tgl_ipm),
+              "Instalasi": instalasi,
+              "Ruangan": ruangan,
+              "Nama Alat": nama_alat,
+              "Merk/Tipe": merk_tipe,
+              "Nomor Seri": nomor_seri,
+              "Tgl Kalibrasi": tgl_kalibrasi,
+              "Display/Monitor": display_mon,
+              "Switch On/Off": switch_on_off,
+              "Control Setting": control_setting,
+              "Keypad": keypad,
+              "Alarm": alarm,
+              "Power Cord": power_cord,
+              "Stok Konsumabel": stok_konsumabel,
+              "Penggantian Consumable": ganti_consumable,
+              "Hasil Maintenance": hasil_maintenance,
+              "Teknisi Pelaksana": teknisi,
+              "PJ Ruangan": pj_ruangan,
+          }
+          if uploaded_file is not None:
+            new_row["Lampiran"] = uploaded_file.name
+
+          if save_sheet_data(selected_menu, new_row):
+            st.success("Data Pemeliharaan Berhasil Disimpan!")
+            st.rerun()
+
+  # C. FORM STANDAR
+  else:
+    with st.form(key=f"form_standard_{selected_menu}", clear_on_submit=True):
+      col1, col2 = st.columns(2)
+      with col1:
+        nama_alat = st.text_input("Nama Alat")
+        merk = st.text_input("Merk")
+        type_alat = st.text_input("Type")
+        nomor_seri = st.text_input("Nomor Seri / SN")
+        tahun_pengadaan = st.text_input("Tahun Pengadaan")
+      with col2:
+        harga_perolehan = st.text_input("Harga Perolehan")
+        kondisi = st.selectbox(
+            "Kondisi", ["Kondisi Baik", "Kondisi KB", "Kondisi RB"]
+        )
+        ruangan = st.text_input("Ruangan / Lokasi")
+        keterangan = st.text_area("Keterangan / Catatan")
+
+      uploaded_file = st.file_uploader(
+          "Upload Foto / Lampiran (PDF, PNG, JPG, XLSX)",
+          type=["pdf", "png", "jpg", "jpeg", "xlsx"],
+      )
+      submitted_std = st.form_submit_button(
+          f"Simpan Data {selected_menu}", use_container_width=True
+      )
+
+      if submitted_std:
+        if not nama_alat:
+          st.warning("Mohon isi minimal Nama Alat!")
+        else:
+          new_row = {
+              "Nama Alat": nama_alat,
+              "Merk": merk,
+              "Type": type_alat,
+              "Nomor Seri": nomor_seri,
+              "Tahun Pengadaan": tahun_pengadaan,
+              "Harga Perolehan": harga_perolehan,
+              kondisi: "✓",
+              "Ruangan": ruangan,
+              "Keterangan": keterangan,
+          }
+          if uploaded_file is not None:
+            new_row["Lampiran"] = uploaded_file.name
+
+          if save_sheet_data(selected_menu, new_row):
+            st.success(f"Data {selected_menu} berhasil disimpan!")
+            st.rerun()
+
+  # MASS UPLOAD
+  if st.session_state["user_role"] == "NAY":
+    with st.expander(f"📁 Mass Upload & Download Template ({selected_menu})"):
+      render_template_download_button(selected_menu)
+      mass_file = st.file_uploader(
+          "Upload File Excel untuk Mass Import",
+          type=["xlsx", "xls"],
+          key=f"mass_excel_{selected_menu}",
+      )
+      if mass_file is not None:
+        if st.button(
+            "🚀 Proses Mass Import Excel", key=f"btn_import_{selected_menu}"
+        ):
+          try:
+            df_mass = pd.read_excel(mass_file)
+            count = 0
+            for _, row in df_mass.iterrows():
+              row_dict = row.dropna().to_dict()
+              clean_dict = {
+                  str(k).strip(): str(v).strip() for k, v in row_dict.items()
+              }
+              if save_sheet_data(selected_menu, clean_dict):
+                count += 1
+            st.success(f"Berhasil mengimpor {count} baris data!")
+            st.rerun()
+          except Exception as e:
+            st.error(f"Gagal memproses file Excel: {e}")
+
+  st.markdown("---")
+  st.subheader(f"📋 Live-Editor & Tabel Data: {selected_menu}")
+  df_current = load_sheet_data(selected_menu)
+
+  if search_barcode and not df_current.empty:
+    match_col = [
+        col
+        for col in df_current.columns
+        if "seri" in col.lower() or "alat" in col.lower()
+    ]
+    if match_col:
+      df_current = df_current[
+          df_current[match_col[0]]
+          .astype(str)
+          .str.contains(search_barcode, case=False, na=False)
+      ]
+
+  st.dataframe(df_current, use_container_width=True)
+  render_excel_download_button(
+      df_current, filename_prefix=selected_menu.replace(" ", "_")
+  )
+
+# ==========================================
+# 8. RINGKASAN & REKAPITULASI
+# ==========================================
+else:
+  st.header("📊 Ringkasan Analisis Data W-SIGNAL")
+  all_menus = [
+      "Inventory Alkes",
+      "Perbaikan",
+      "Pemeliharaan",
+      "Stok Suku Cadang",
+      "Perencanaan RAB (Usulan)",
+      "Surat Masuk (Nota Dinas)",
+      "Rekap SR Vendor",
+      "Kalibrasi",
+  ]
+  tabs = st.tabs(all_menus)
+  for idx, sheet_name in enumerate(all_menus):
+    with tabs[idx]:
+      st.subheader(f"Rekapitulasi {sheet_name}")
+      df_tab = load_sheet_data(sheet_name)
+      st.dataframe(df_tab, use_container_width=True)
+      render_excel_download_button(
+          df_tab, filename_prefix=f"Rekap_{sheet_name.replace(' ', '_')}"
+      )
