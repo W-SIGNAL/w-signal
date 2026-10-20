@@ -24,6 +24,13 @@ st.markdown(
         border-radius: 8px;
         font-weight: bold;
     }
+    .section-header {
+        color: #4CAF50;
+        border-bottom: 1px solid #333;
+        padding-bottom: 5px;
+        margin-top: 15px;
+        margin-bottom: 10px;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -33,7 +40,7 @@ LOCAL_DB_FILE = "database_w_signal.json"
 
 
 # ==========================================
-# 2. PENYIMPANAN DATA LOKAL (FILE JSON/EXCEL)
+# 2. PENYIMPANAN DATA LOKAL (FILE JSON)
 # ==========================================
 def load_all_local_data():
   """Membaca seluruh database dari file JSON lokal."""
@@ -68,7 +75,6 @@ def save_sheet_data(menu_name, new_data_dict):
     if menu_name not in db:
       db[menu_name] = []
 
-    # Bersihkan key dan value
     clean_dict = {
         str(k).strip(): str(v).strip()
         for k, v in new_data_dict.items()
@@ -110,19 +116,53 @@ def render_excel_download_button(df, filename_prefix="Rekap_Data"):
 
 
 def render_template_download_button(sheet_name):
-  columns = [
-      "Nama Alat",
-      "Merk",
-      "Type",
-      "Nomor Seri",
-      "Tahun Pengadaan",
-      "Harga Perolehan",
-      "Kondisi Baik",
-      "Kondisi KB",
-      "Kondisi RB",
-      "Ruangan",
-      "Keterangan",
-  ]
+  if sheet_name == "Perbaikan":
+    columns = [
+        "No LKEM",
+        "Tanggal Pekerjaan",
+        "Nama Alat",
+        "Merk/Tipe",
+        "Nomor Seri",
+        "Ruang/Instalasi",
+        "Keluhan",
+        "Analisa",
+        "Tindakan / Action",
+        "Hasil Akhir",
+        "Rekomendasi",
+        "Teknisi Pelaksana",
+        "PJ Ruangan",
+    ]
+  elif sheet_name == "Pemeliharaan":
+    columns = [
+        "No LKEM",
+        "Tanggal IPM",
+        "Nama Alat",
+        "Merk/Tipe",
+        "Nomor Seri",
+        "Ruang/Instalasi",
+        "Suhu Ruangan",
+        "Kelembaban",
+        "Tegangan",
+        "Pembersihan Unit",
+        "Pemeriksaan Fungsi",
+        "Stok Konsumabel",
+        "Hasil Maintenance",
+        "Teknisi Pelaksana",
+        "PJ Ruangan",
+    ]
+  else:
+    columns = [
+        "Nama Alat",
+        "Merk",
+        "Type",
+        "Nomor Seri",
+        "Tahun Pengadaan",
+        "Harga Perolehan",
+        "Kondisi",
+        "Ruangan",
+        "Keterangan",
+    ]
+
   df_template = pd.DataFrame(columns=columns)
   template_bytes = convert_df_to_excel(
       df_template, sheet_name=sheet_name[:30]
@@ -226,54 +266,354 @@ st.title("📟 W-SIGNAL (Welas Asih System for Inventory & General Alkes Log)")
 
 if selected_menu != "Lihat Semua Data & Ringkasan":
 
-  st.header(f"📝 Input / Tambah Data: {selected_menu}")
+  st.header(f"📝 Input / Lembar Kerja: {selected_menu}")
 
   with st.form(key=f"form_{selected_menu}", clear_on_submit=True):
-    col1, col2 = st.columns(2)
-    with col1:
-      nama_alat = st.text_input("Nama Alat")
-      merk = st.text_input("Merk")
-      type_alat = st.text_input("Type")
-      nomor_seri = st.text_input("Nomor Seri / SN")
-      tahun_pengadaan = st.text_input("Tahun Pengadaan")
-    with col2:
-      harga_perolehan = st.text_input("Harga Perolehan")
-      kondisi = st.selectbox(
-          "Kondisi", ["Kondisi Baik", "Kondisi KB", "Kondisi RB"]
+
+    # -------------------------------------------------------------
+    # A. FORM KHUSUS PERBAIKAN (LK SERVICE ELEKTROMEDIS)
+    # -------------------------------------------------------------
+    if selected_menu == "Perbaikan":
+      st.subheader("📋 Lembar Kerja Service Elektromedis")
+
+      c1, c2, c3 = st.columns(3)
+      with c1:
+        no_lkem = st.text_input("No. LKEM", placeholder=".../IPSRS/.../20...")
+        tgl_pekerjaan = st.date_input("Tanggal Pekerjaan")
+      with c2:
+        instalasi = st.text_input("Instalasi / Unit")
+        ruangan = st.text_input("Ruangan")
+      with c3:
+        nama_alat = st.text_input("Nama Alat *")
+        merk_tipe = st.text_input("Merk / Tipe")
+
+      c4, c5, c6 = st.columns(3)
+      with c4:
+        nomor_seri = st.text_input("Nomor Seri (SN)")
+      with c5:
+        tgl_kalibrasi = st.text_input("Tanggal Kalibrasi Terakhir")
+      with c6:
+        alat_kerja = st.text_input("Alat Kerja / Calibrator yang Digunakan")
+
+      st.markdown(
+          "##### 🌡️ Inspection: Kondisi Lingkungan & Kelistrikan"
       )
-      ruangan = st.text_input("Ruangan / Lokasi")
-      keterangan = st.text_area("Keterangan / Catatan")
+      e1, e2, e3, e4, e5 = st.columns(5)
+      with e1:
+        suhu = st.text_input("Suhu (°C)")
+      with e2:
+        kelembaban = st.text_input("Kelembaban (%)")
+      with e3:
+        tegangan_jala = st.text_input("Tegangan Jala-jala (V)")
+      with e4:
+        ups_volt = st.text_input("UPS (V)")
+      with e5:
+        stabilizer_volt = st.text_input("Stabilizer (V)")
 
-    uploaded_file = st.file_uploader(
-        "Upload Foto / Lampiran (PDF, PNG, JPG, XLSX)",
-        type=["pdf", "png", "jpg", "jpeg", "xlsx"],
-    )
+      st.markdown("##### 🔍 Inspection: Fisik & Keamanan Listrik")
+      f1, f2, f3, f4 = st.columns(4)
+      with f1:
+        penempatan = st.selectbox(
+            "Penempatan Alat", ["Baik", "Tidak Baik", "N/A"]
+        )
+      with f2:
+        trolley = st.selectbox(
+            "Roda / Trolley / Bracket", ["Baik", "Tidak Baik", "N/A"]
+        )
+      with f3:
+        fisik_unit = st.selectbox(
+            "Kondisi Fisik Main Unit",
+            ["Baik (B)", "Cukup (C/RR)", "Rusak Berat (RB)"],
+        )
+      with f4:
+        ground_res = st.text_input("Ground Resistance (≤ 0,5 Ω)")
 
-    submitted = st.form_submit_button(
-        f"Simpan Data {selected_menu}", use_container_width=True
-    )
+      st.markdown("##### 🛠️ Detail Perbaikan / Service Log")
+      keluhan = st.text_area("Keluhan / Masalah Awal")
+      tahapan_pemeriksaan = st.text_area("Tahapan Pemeriksaan")
+      analisa = st.text_area("Analisa Kerusakan")
 
-    if submitted:
-      if not nama_alat:
-        st.warning("Mohon isi minimal Nama Alat!")
-      else:
-        new_row = {
-            "Nama Alat": nama_alat,
-            "Merk": merk,
-            "Type": type_alat,
-            "Nomor Seri": nomor_seri,
-            "Tahun Pengadaan": tahun_pengadaan,
-            "Harga Perolehan": harga_perolehan,
-            kondisi: "✓",
-            "Ruangan": ruangan,
-            "Keterangan": keterangan,
-        }
-        if uploaded_file is not None:
-          new_row["Lampiran"] = uploaded_file.name
+      st.markdown("##### 🔧 Tindakan / Action")
+      action_type = st.multiselect(
+          "Tindakan Perbaikan:",
+          [
+              "Perbaikan Langsung",
+              "Ganti Spare Part (Stock)",
+              "Tunda Perbaikan",
+              "Ganti Spare Part (PBJP)",
+              "Perlu Perbaikan Pihak Ketiga",
+          ],
+      )
+      detail_action = st.text_area("Detail Tindakan & Penggantian Part")
 
-        if save_sheet_data(selected_menu, new_row):
-          st.success(f"Data {selected_menu} berhasil disimpan!")
-          st.rerun()
+      st.markdown("##### 📌 Hasil Pekerjaan & Rekomendasi")
+      r1, r2 = st.columns(2)
+      with r1:
+        hasil_pemeriksaan = st.selectbox(
+            "Hasil Pemeriksaan",
+            [
+                "Alat Berfungsi Dengan Baik",
+                "Alat Tidak Dapat Berfungsi Dengan Baik",
+            ],
+        )
+        rekomendasi = st.selectbox(
+            "Rekomendasi Akhir",
+            [
+                "Alat Dapat Digunakan",
+                "Alat Tidak Dapat Digunakan",
+                "Alat Sudah Tidak Laik Operasi (Usul Penghapusan)",
+            ],
+        )
+      with r2:
+        teknisi = st.text_input(
+            "Teknisi Pelaksana", value=st.session_state["username"]
+        )
+        pj_ruangan = st.text_input("PJ Alat / Ruangan")
+
+      uploaded_file = st.file_uploader(
+          "Upload Foto / Lampiran Service", type=["pdf", "png", "jpg", "xlsx"]
+      )
+
+      submitted = st.form_submit_button(
+          "Simpan Lembar Kerja Perbaikan", use_container_width=True
+      )
+
+      if submitted:
+        if not nama_alat:
+          st.warning("Mohon isi minimal Nama Alat!")
+        else:
+          new_row = {
+              "No LKEM": no_lkem,
+              "Tanggal Pekerjaan": str(tgl_pekerjaan),
+              "Instalasi": instalasi,
+              "Ruangan": ruangan,
+              "Nama Alat": nama_alat,
+              "Merk/Tipe": merk_tipe,
+              "Nomor Seri": nomor_seri,
+              "Tgl Kalibrasi": tgl_kalibrasi,
+              "Alat Kerja": alat_kerja,
+              "Suhu (°C)": suhu,
+              "Kelembaban (%)": kelembaban,
+              "Tegangan Jala": tegangan_jala,
+              "UPS (V)": ups_volt,
+              "Stabilizer (V)": stabilizer_volt,
+              "Penempatan": penempatan,
+              "Roda/Trolley": trolley,
+              "Fisik Main Unit": fisik_unit,
+              "Ground Resistance": ground_res,
+              "Keluhan": keluhan,
+              "Tahapan Pemeriksaan": tahapan_pemeriksaan,
+              "Analisa": analisa,
+              "Tindakan": ", ".join(action_type),
+              "Detail Action": detail_action,
+              "Hasil Pemeriksaan": hasil_pemeriksaan,
+              "Rekomendasi": rekomendasi,
+              "Teknisi Pelaksana": teknisi,
+              "PJ Ruangan": pj_ruangan,
+          }
+          if uploaded_file is not None:
+            new_row["Lampiran"] = uploaded_file.name
+
+          if save_sheet_data(selected_menu, new_row):
+            st.success("Lembar Kerja Perbaikan berhasil disimpan!")
+            st.rerun()
+
+    # -------------------------------------------------------------
+    # B. FORM KHUSUS PEMELIHARAAN (LK IPM ELEKTROMEDIS)
+    # -------------------------------------------------------------
+    elif selected_menu == "Pemeliharaan":
+      st.subheader("📋 Lembar Kerja Inspection Preventive Maintenance (IPM)")
+
+      c1, c2, c3 = st.columns(3)
+      with c1:
+        no_lkem = st.text_input("No. LKEM", placeholder=".../IPSRS/.../20...")
+        tgl_ipm = st.date_input("Tanggal Pemeliharaan (IPM)")
+      with c2:
+        instalasi = st.text_input("Instalasi / Unit")
+        ruangan = st.text_input("Ruangan")
+      with c3:
+        nama_alat = st.text_input("Nama Alat *")
+        merk_tipe = st.text_input("Merk / Tipe")
+
+      c4, c5, c6 = st.columns(3)
+      with c4:
+        nomor_seri = st.text_input("Nomor Seri (SN)")
+      with c5:
+        tgl_kalibrasi = st.text_input("Tanggal Kalibrasi Terakhir")
+      with c6:
+        alat_kerja = st.text_input("Alat Kerja yang Digunakan")
+
+      st.markdown(
+          "##### 🌡️ Kondisi Lingkungan & Kelistrikan"
+      )
+      e1, e2, e3, e4, e5 = st.columns(5)
+      with e1:
+        suhu = st.text_input("Suhu (°C)")
+      with e2:
+        kelembaban = st.text_input("Kelembaban (%)")
+      with e3:
+        tegangan_jala = st.text_input("Tegangan Jala-jala (V)")
+      with e4:
+        ups_volt = st.text_input("UPS (V)")
+      with e5:
+        stabilizer_volt = st.text_input("Stabilizer (V)")
+
+      st.markdown("##### 🔍 Inspection & Pemeriksaan Fungsi Alat")
+      f1, f2, f3 = st.columns(3)
+      with f1:
+        display_mon = st.selectbox("Display / Monitor", ["Baik", "Tidak Baik"])
+        switch_on_off = st.selectbox("Switch On/Off", ["Baik", "Tidak Baik"])
+      with f2:
+        control_setting = st.selectbox(
+            "Control Setting", ["Baik", "Tidak Baik"]
+        )
+        keypad = st.selectbox("Keypad", ["Baik", "Tidak Baik"])
+      with f3:
+        alarm = st.selectbox("Alarm", ["Baik", "Tidak Baik"])
+        power_cord = st.selectbox(
+            "Power Cord / Adaptor", ["Baik", "Tidak Baik"]
+        )
+
+      st.markdown("##### 🧹 Preventive Maintenance Tasks")
+      p1, p2, p3 = st.columns(3)
+      with p1:
+        pembersihan_unit = st.selectbox(
+            "Pembersihan Main Unit", ["Dilakukan", "Tidak Dilakukan"]
+        )
+      with p2:
+        pembersihan_aksesoris = st.selectbox(
+            "Pembersihan Aksesoris", ["Dilakukan", "Tidak Dilakukan"]
+        )
+      with p3:
+        pantau_fungsi = st.selectbox(
+            "Pemantauan Fungsi & Kinerja", ["Dilakukan", "Tidak Dilakukan"]
+        )
+
+      st.markdown("##### 📦 Stok Konsumabel & Hasil Maintenance")
+      h1, h2, h3 = st.columns(3)
+      with h1:
+        stok_konsumabel = st.selectbox(
+            "Stok Konsumabel", ["Ada", "Tidak Ada", "Habis"]
+        )
+      with h2:
+        hasil_maintenance = st.selectbox(
+            "Hasil Maintenance",
+            [
+                "Allet Berfungsi Dengan Baik",
+                "Alat Tidak Dapat Berfungsi Dengan Baik",
+            ],
+        )
+      with h3:
+        ganti_consumable = st.text_input(
+            "Penggantian Consumable Part / Baterai"
+        )
+
+      m1, m2 = st.columns(2)
+      with m1:
+        teknisi = st.text_input(
+            "Teknisi Pelaksana", value=st.session_state["username"]
+        )
+      with m2:
+        pj_ruangan = st.text_input("PJ Alat / Ruangan")
+
+      uploaded_file = st.file_uploader(
+          "Upload Foto / Lampiran Pemeliharaan",
+          type=["pdf", "png", "jpg", "xlsx"],
+      )
+
+      submitted = st.form_submit_button(
+          "Simpan Lembar Kerja IPM", use_container_width=True
+      )
+
+      if submitted:
+        if not nama_alat:
+          st.warning("Mohon isi minimal Nama Alat!")
+        else:
+          new_row = {
+              "No LKEM": no_lkem,
+              "Tanggal IPM": str(tgl_ipm),
+              "Instalasi": instalasi,
+              "Ruangan": ruangan,
+              "Nama Alat": nama_alat,
+              "Merk/Tipe": merk_tipe,
+              "Nomor Seri": nomor_seri,
+              "Tgl Kalibrasi": tgl_kalibrasi,
+              "Alat Kerja": alat_kerja,
+              "Suhu (°C)": suhu,
+              "Kelembaban (%)": kelembaban,
+              "Tegangan Jala": tegangan_jala,
+              "Display/Monitor": display_mon,
+              "Switch On/Off": switch_on_off,
+              "Control Setting": control_setting,
+              "Keypad": keypad,
+              "Alarm": alarm,
+              "Power Cord": power_cord,
+              "Pembersihan Unit": pembersihan_unit,
+              "Pembersihan Aksesoris": pembersihan_aksesoris,
+              "Pemantauan Fungsi": pantau_fungsi,
+              "Stok Konsumabel": stok_konsumabel,
+              "Penggantian Consumable": ganti_consumable,
+              "Hasil Maintenance": hasil_maintenance,
+              "Teknisi Pelaksana": teknisi,
+              "PJ Ruangan": pj_ruangan,
+          }
+          if uploaded_file is not None:
+            new_row["Lampiran"] = uploaded_file.name
+
+          if save_sheet_data(selected_menu, new_row):
+            st.success("Lembar Kerja Pemeliharaan berhasil disimpan!")
+            st.rerun()
+
+    # -------------------------------------------------------------
+    # C. FORM STANDAR UNTUK MENU LAINNYA
+    # -------------------------------------------------------------
+    else:
+      with st.form(key=f"form_std_{selected_menu}", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+          nama_alat = st.text_input("Nama Alat")
+          merk = st.text_input("Merk")
+          type_alat = st.text_input("Type")
+          nomor_seri = st.text_input("Nomor Seri / SN")
+          tahun_pengadaan = st.text_input("Tahun Pengadaan")
+        with col2:
+          harga_perolehan = st.text_input("Harga Perolehan")
+          kondisi = st.selectbox(
+              "Kondisi", ["Kondisi Baik", "Kondisi KB", "Kondisi RB"]
+          )
+          ruangan = st.text_input("Ruangan / Lokasi")
+          keterangan = st.text_area("Keterangan / Catatan")
+
+        uploaded_file = st.file_uploader(
+            "Upload Foto / Lampiran (PDF, PNG, JPG, XLSX)",
+            type=["pdf", "png", "jpg", "jpeg", "xlsx"],
+        )
+
+        submitted_std = st.form_submit_button(
+            f"Simpan Data {selected_menu}", use_container_width=True
+        )
+
+        if submitted_std:
+          if not nama_alat:
+            st.warning("Mohon isi minimal Nama Alat!")
+          else:
+            new_row = {
+                "Nama Alat": nama_alat,
+                "Merk": merk,
+                "Type": type_alat,
+                "Nomor Seri": nomor_seri,
+                "Tahun Pengadaan": tahun_pengadaan,
+                "Harga Perolehan": harga_perolehan,
+                kondisi: "✓",
+                "Ruangan": ruangan,
+                "Keterangan": keterangan,
+            }
+            if uploaded_file is not None:
+              new_row["Lampiran"] = uploaded_file.name
+
+            if save_sheet_data(selected_menu, new_row):
+              st.success(f"Data {selected_menu} berhasil disimpan!")
+              st.rerun()
 
   # Fitur Mass Upload Excel Khusus Admin (NAY)
   if st.session_state["user_role"] == "NAY":
