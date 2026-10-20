@@ -1,7 +1,6 @@
 import io
 import json
-import gspread
-from google.oauth2.service_account import Credentials
+import os
 import pandas as pd
 import streamlit as st
 
@@ -30,117 +29,57 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+LOCAL_DB_FILE = "database_w_signal.json"
+
 
 # ==========================================
-# 2. KONEKSI GOOGLE SHEETS VIA SECRETS (FIXED)
+# 2. PENYIMPANAN DATA LOKAL (FILE JSON/EXCEL)
 # ==========================================
-@st.cache_resource
-def get_gspread_client():
-  scopes = [
-      "https://www.googleapis.com/auth/spreadsheets",
-      "https://www.googleapis.com/auth/drive",
-  ]
-  if "gcp_service_account" not in st.secrets:
-    st.error(
-        "Secrets '[gcp_service_account]' tidak ditemukan di Streamlit Cloud!"
-    )
-    st.stop()
-
-  raw_secret = st.secrets["gcp_service_account"]
-
-  # Penanganan fleksibel untuk format Dict maupun JSON String
-  if isinstance(raw_secret, str):
-    secret_dict = json.loads(raw_secret)
-  else:
-    secret_dict = dict(raw_secret)
-
-  # Memastikan private_key terformat dengan newlines yang benar
-  if "private_key" in secret_dict:
-    secret_dict["private_key"] = secret_dict["private_key"].replace(
-        "\\n", "\n"
-    )
-
-  creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
-  return gspread.authorize(creds)
+def load_all_local_data():
+  """Membaca seluruh database dari file JSON lokal."""
+  if os.path.exists(LOCAL_DB_FILE):
+    try:
+      with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+    except Exception:
+      return {}
+  return {}
 
 
-@st.cache_data(ttl=5)
-def load_sheet_data(worksheet_name):
-  try:
-    gc = get_gspread_client()
-    sh = gc.open("W-SIGNAL_Database")
+def save_all_local_data(data):
+  """Menyimpan seluruh database ke file JSON lokal."""
+  with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=False, indent=4)
 
-    target_ws = None
-    for ws in sh.worksheets():
-      if ws.title.strip().lower() == worksheet_name.strip().lower():
-        target_ws = ws
-        break
 
-    if target_ws is None:
-      return pd.DataFrame()
-
-    data = target_ws.get_all_values()
-    if not data or len(data) == 0:
-      return pd.DataFrame()
-
-    header_idx = 0
-    for idx, row in enumerate(data[:5]):
-      cleaned_row = [str(cell).strip() for cell in row]
-      if any(
-          k in cleaned_row
-          for k in ["Nama Alat", "Merk", "Tanggal", "Nomor Seri"]
-      ):
-        header_idx = idx
-        break
-
-    headers = [str(h).strip() for h in data[header_idx]]
-    rows = data[header_idx + 1 :]
-
-    df = pd.DataFrame(rows, columns=headers)
-    df = df.replace("", None).dropna(how="all").fillna("")
-    return df
-  except Exception as e:
+def load_sheet_data(menu_name):
+  """Mengambil data tabel sebagai DataFrame Pandas."""
+  db = load_all_local_data()
+  records = db.get(menu_name, [])
+  if not records:
     return pd.DataFrame()
+  return pd.DataFrame(records)
 
 
-def save_sheet_data(worksheet_name, new_data_dict):
+def save_sheet_data(menu_name, new_data_dict):
+  """Menambahkan satu baris data ke penyimpanan lokal."""
   try:
-    gc = get_gspread_client()
-    sh = gc.open("W-SIGNAL_Database")
+    db = load_all_local_data()
+    if menu_name not in db:
+      db[menu_name] = []
 
-    target_ws = None
-    for ws in sh.worksheets():
-      if ws.title.strip().lower() == worksheet_name.strip().lower():
-        target_ws = ws
-        break
+    # Bersihkan key dan value
+    clean_dict = {
+        str(k).strip(): str(v).strip()
+        for k, v in new_data_dict.items()
+        if v is not None
+    }
+    db[menu_name].append(clean_dict)
 
-    if target_ws is None:
-      target_ws = sh.add_worksheet(
-          title=worksheet_name, rows="500", cols="20"
-      )
-
-    existing_data = target_ws.get_all_values()
-
-    if not existing_data:
-      headers = list(new_data_dict.keys())
-      target_ws.append_row(headers)
-      existing_headers = headers
-    else:
-      existing_headers = [str(h).strip() for h in existing_data[0]]
-
-    row_to_append = []
-    for h in existing_headers:
-      row_to_append.append(str(new_data_dict.get(h, "")))
-
-    for k, v in new_data_dict.items():
-      if k not in existing_headers:
-        existing_headers.append(k)
-        row_to_append.append(str(v))
-
-    target_ws.append_row(row_to_append)
+    save_all_local_data(db)
     return True
   except Exception as e:
-    st.error(f"Gagal menyimpan data ke Google Sheets: {e}")
+    st.error(f"Gagal menyimpan data lokal: {e}")
     return False
 
 
@@ -182,6 +121,7 @@ def render_template_download_button(sheet_name):
       "Kondisi KB",
       "Kondisi RB",
       "Ruangan",
+      "Keterangan",
   ]
   df_template = pd.DataFrame(columns=columns)
   template_bytes = convert_df_to_excel(
@@ -331,10 +271,9 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
         if uploaded_file is not None:
           new_row["Lampiran"] = uploaded_file.name
 
-        with st.spinner("Menyimpan data ke Google Sheets..."):
-          if save_sheet_data(selected_menu, new_row):
-            st.cache_data.clear()
-            st.success("Data berhasil disimpan!")
+        if save_sheet_data(selected_menu, new_row):
+          st.success(f"Data {selected_menu} berhasil disimpan!")
+          st.rerun()
 
   # Fitur Mass Upload Excel Khusus Admin (NAY)
   if st.session_state["user_role"] == "NAY":
@@ -347,27 +286,23 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
           key="mass_excel",
       )
       if mass_file is not None:
-        if st.button("🚀 Proses Mass Import Excel ke Google Sheets"):
+        if st.button("🚀 Proses Mass Import Excel"):
           try:
             df_mass = pd.read_excel(mass_file)
             count = 0
-            with st.spinner("Sedang memproses dan memasukkan data massal..."):
-              for _, row in df_mass.iterrows():
-                row_dict = row.dropna().to_dict()
-                clean_dict = {
-                    str(k).strip(): str(v).strip() for k, v in row_dict.items()
-                }
-                if save_sheet_data(selected_menu, clean_dict):
-                  count += 1
-            st.cache_data.clear()
-            st.success(
-                f"Berhasil mengimpor {count} baris data ke Google Sheets!"
-            )
+            for _, row in df_mass.iterrows():
+              row_dict = row.dropna().to_dict()
+              clean_dict = {
+                  str(k).strip(): str(v).strip() for k, v in row_dict.items()
+              }
+              if save_sheet_data(selected_menu, clean_dict):
+                count += 1
+            st.success(f"Berhasil mengimpor {count} baris data!")
             st.rerun()
           except Exception as e:
             st.error(f"Gagal memproses file Excel: {e}")
 
-  # Bagian Tabel Data
+  # Bagian Tabel Data & Download Harian
   st.markdown("---")
   st.subheader(f"📋 Live-Editor & Tabel Data: {selected_menu}")
 
@@ -388,6 +323,7 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
 
   st.dataframe(df_current, use_container_width=True)
 
+  # Tombol Download Excel Harian
   render_excel_download_button(
       df_current, filename_prefix=selected_menu.replace(" ", "_")
   )
@@ -397,10 +333,6 @@ if selected_menu != "Lihat Semua Data & Ringkasan":
 # ==========================================
 else:
   st.header("📊 Ringkasan Analisis Data W-SIGNAL")
-
-  if st.button("🔄 Segarkan Data", use_container_width=True):
-    st.cache_data.clear()
-    st.rerun()
 
   all_menus = [
       "Inventory Alkes",
